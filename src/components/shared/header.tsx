@@ -15,7 +15,8 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Sidebar } from "./sidebar";
-import { logoutAction, type SessionUser } from "@/app/actions/auth";
+import { type SessionUser } from "@/app/actions/auth";
+import { signOut } from "next-auth/react";
 
 interface HeaderProps {
   user: SessionUser | null;
@@ -43,9 +44,7 @@ export function Header({ user }: HeaderProps) {
       .slice(0, 2);
   };
 
-  const handleLogout = async () => {
-    await logoutAction();
-  };
+
 
   return (
     <header className="sticky top-0 z-40 flex h-16 w-full items-center justify-between border-b border-border bg-card px-4 shadow-sm sm:px-6">
@@ -84,7 +83,7 @@ export function Header({ user }: HeaderProps) {
             <button className="flex items-center gap-2 rounded-full p-1.5 text-sm hover:bg-accent focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">
               <Avatar className="h-8 w-8 ring-2 ring-primary/10">
                 <AvatarFallback className="bg-primary text-primary-foreground font-semibold text-xs">
-                  {user ? getInitials(user.name) : "U"}
+                  {user ? getInitials(user.name || "") : "U"}
                 </AvatarFallback>
               </Avatar>
               <div className="hidden md:flex flex-col items-start text-left">
@@ -106,12 +105,10 @@ export function Header({ user }: HeaderProps) {
             </div>
             {user?.role === "admin" && <DropdownMenuSeparator className="sm:hidden" />}
             <DropdownMenuItem render={
-              <form action={handleLogout} className="w-full" />
+              <button onClick={() => signOut({ callbackUrl: "/login" })} className="flex w-full items-center gap-2 cursor-pointer text-destructive focus:text-destructive-foreground bg-transparent border-none text-left w-full h-full p-1.5 text-sm" />
             }>
-              <button type="submit" className="flex w-full items-center gap-2 cursor-pointer text-destructive focus:text-destructive-foreground bg-transparent border-none text-left w-full h-full p-1.5 text-sm">
-                <LogOut className="h-4 w-4" />
-                <span>Log out</span>
-              </button>
+              <LogOut className="h-4 w-4" />
+              <span>Log out</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

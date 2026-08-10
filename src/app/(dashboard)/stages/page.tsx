@@ -1,18 +1,14 @@
 import React from "react";
-import { getSession } from "@/app/actions/auth";
-import { redirect } from "next/navigation";
+import { auth } from "@/auth";
+import { requireAdmin } from "@/lib/authz";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Settings, Plus, LayoutGrid } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default async function StagesPage() {
-  const session = await getSession();
-
-  // Role Gate: Redirect back to home dashboard if not administrator
-  if (session?.role !== "admin") {
-    redirect("/");
-  }
+  const session = await auth();
+  requireAdmin(session);
 
   const catalogStages = [
     { code: "STG-01", name: "Backlog", order: 1, defaultStatus: "not_started", description: "Default entry stage for stories requiring refinement" },

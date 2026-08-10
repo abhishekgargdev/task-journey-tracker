@@ -1,25 +1,21 @@
 import React from "react";
-import { getSession } from "@/app/actions/auth";
-import { redirect } from "next/navigation";
+import { auth } from "@/auth";
+import { requireAdmin } from "@/lib/authz";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Users as UsersIcon, Plus, UserCheck, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default async function UsersPage() {
-  const session = await getSession();
-
-  // Role Gate: Redirect back to home dashboard if not administrator
-  if (session?.role !== "admin") {
-    redirect("/");
-  }
+  const session = await auth();
+  requireAdmin(session);
 
   const mockUsers = [
     { name: "Admin User", email: "admin@company.com", role: "admin", status: "Active" },
-    { name: "Standard User", email: "user@company.com", role: "user", status: "Active" },
-    { name: "Sarah Jenkins", email: "sarah.j@company.com", role: "user", status: "Active" },
-    { name: "Alex Rivera", email: "alex.r@company.com", role: "user", status: "Active" },
-    { name: "Marcus Chen", email: "marcus.c@company.com", role: "user", status: "Inactive" },
+    { name: "Standard User", email: "user@company.com", role: "engineer", status: "Active" },
+    { name: "Sarah Jenkins", email: "sarah.j@company.com", role: "lead", status: "Active" },
+    { name: "Alex Rivera", email: "alex.r@company.com", role: "engineer", status: "Active" },
+    { name: "Marcus Chen", email: "marcus.c@company.com", role: "engineer", status: "Inactive" },
   ];
 
   return (
@@ -65,7 +61,7 @@ export default async function UsersPage() {
                           Admin
                         </span>
                       ) : (
-                        <span className="text-xs font-medium text-muted-foreground">User</span>
+                        <span className="text-xs font-medium text-muted-foreground capitalize">{user.role}</span>
                       )}
                     </td>
                     <td className="py-3 px-4 text-right">

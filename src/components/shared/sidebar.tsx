@@ -14,7 +14,8 @@ import {
   FolderGit,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { logoutAction, type SessionUser } from "@/app/actions/auth";
+import { type SessionUser } from "@/app/actions/auth";
+import { signOut } from "next-auth/react";
 
 interface SidebarProps {
   user: SessionUser | null;
@@ -44,9 +45,6 @@ export function Sidebar({ user, className, isMobile = false }: SidebarProps) {
     return pathname.startsWith(href);
   };
 
-  const handleLogout = async () => {
-    await logoutAction();
-  };
 
   return (
     <aside
@@ -147,16 +145,14 @@ export function Sidebar({ user, className, isMobile = false }: SidebarProps) {
               {user?.role === "admin" ? "Administrator" : "Standard User"}
             </span>
           </div>
-          <form action={handleLogout} className="flex-shrink-0">
-            <button
-              type="submit"
-              title="Logout"
-              className="rounded-md p-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-destructive transition-colors focus:outline-none cursor-pointer"
-            >
-              <LogOut className="h-4 w-4" />
-              <span className="sr-only">Logout</span>
-            </button>
-          </form>
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            title="Logout"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-destructive transition-colors focus:outline-none cursor-pointer border-none bg-transparent"
+          >
+            <LogOut className="h-4 w-4" />
+            <span className="sr-only">Logout</span>
+          </button>
         </div>
       </div>
     </aside>

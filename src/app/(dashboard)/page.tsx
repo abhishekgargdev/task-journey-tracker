@@ -1,5 +1,5 @@
 import React from "react";
-import { getSession } from "@/app/actions/auth";
+import { auth } from "@/auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { 
@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 export default async function DashboardPage() {
-  const session = await getSession();
+  const session = await auth();
 
   // Mock pipeline journey counts
   const pipelineMetrics = [
@@ -49,10 +49,10 @@ export default async function DashboardPage() {
       {/* Welcome Banner */}
       <div className="rounded-xl border border-primary/10 bg-gradient-to-r from-primary/5 via-primary/10 to-transparent p-6 shadow-sm">
         <h2 className="text-xl font-bold text-foreground sm:text-2xl">
-          Welcome back, {session?.name}!
+          Welcome back, {session?.user?.name}!
         </h2>
         <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
-          You are logged in as <span className="font-semibold text-foreground">{session?.role === 'admin' ? 'Administrator' : 'Standard User'}</span>. Here is the current delivery status across the active stages in your Task Journey Tracker.
+          You are logged in as <span className="font-semibold text-foreground">{session?.user?.role === 'admin' ? 'Administrator' : 'Standard User'}</span>. Here is the current delivery status across the active stages in your Task Journey Tracker.
         </p>
       </div>
 
@@ -163,9 +163,9 @@ export default async function DashboardPage() {
             <div className="rounded-lg border border-border p-3 space-y-2">
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Session Info</span>
               <div className="text-xs space-y-1 text-foreground">
-                <p><span className="font-semibold text-muted-foreground">User:</span> {session?.name}</p>
-                <p><span className="font-semibold text-muted-foreground">Email:</span> {session?.email}</p>
-                <p><span className="font-semibold text-muted-foreground">Role:</span> {session?.role}</p>
+                <p><span className="font-semibold text-muted-foreground">User:</span> {session?.user?.name}</p>
+                <p><span className="font-semibold text-muted-foreground">Email:</span> {session?.user?.email}</p>
+                <p><span className="font-semibold text-muted-foreground">Role:</span> {session?.user?.role}</p>
               </div>
             </div>
 
