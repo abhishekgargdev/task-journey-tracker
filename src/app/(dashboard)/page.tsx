@@ -1,13 +1,20 @@
 import React, { Suspense } from "react";
 import { redirect } from "next/navigation";
+import type { Metadata } from "next";
 import dbConnect from "@/lib/mongodb";
 import { Sprint } from "@/models/Sprint";
 import { UserStory } from "@/models/UserStory";
 import { StoryStage } from "@/models/StoryStage";
 import { getSession } from "@/lib/session";
+import { pageMetadata } from "@/lib/site-metadata";
 import DashboardClient from "@/components/dashboard/DashboardClient";
 import { Card } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
+
+export const metadata: Metadata = pageMetadata(
+  "Dashboard",
+  "Overview of active stories, sprint progress, and delivery pipeline metrics."
+);
 
 export default async function DashboardPage() {
   const session = await getSession();

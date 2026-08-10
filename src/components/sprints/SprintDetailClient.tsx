@@ -21,11 +21,15 @@ import {
   Search,
   Clock,
   User,
+  BookOpen,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { aggregateStageBreakdown, type StoryItem, type StoryStage } from "@/lib/story-helpers";
 import StoryCard from "@/components/stories/StoryCard";
+import EmptyState from "@/components/shared/EmptyState";
+import SprintStatusBadge from "@/components/shared/SprintStatusBadge";
+import StaggerGrid from "@/components/shared/StaggerGrid";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -67,28 +71,6 @@ interface SprintDetailClientProps {
   sprint: SprintDetail;
   stories: StoryItem[];
   storyStages: StoryStage[];
-}
-
-function SprintStatusBadge({ status }: { status: SprintDetail["status"] }) {
-  if (status === "active") {
-    return (
-      <Badge className="bg-emerald-500/10 text-emerald-600 border-none text-[10px] uppercase font-bold">
-        Active
-      </Badge>
-    );
-  }
-  if (status === "hold") {
-    return (
-      <Badge className="bg-amber-500/10 text-amber-600 border-none text-[10px] uppercase font-bold">
-        On Hold
-      </Badge>
-    );
-  }
-  return (
-    <Badge className="bg-status-completed/10 text-status-completed border-none text-[10px] uppercase font-bold">
-      Completed
-    </Badge>
-  );
 }
 
 export default function SprintDetailClient({
@@ -381,17 +363,28 @@ export default function SprintDetailClient({
         </div>
 
         {filteredStories.length === 0 ? (
-          <Card className="border border-border bg-card p-12 text-center text-xs text-muted-foreground italic">
-            {stories.length === 0
-              ? "No user stories are linked to this sprint yet."
-              : "No stories match the current filters."}
-          </Card>
+          <EmptyState
+            icon={BookOpen}
+            title={stories.length === 0 ? "No stories in this sprint" : "No stories match filters"}
+            description={
+              stories.length === 0
+                ? "Attach user stories to this sprint from a task detail page to start tracking their journey."
+                : "Try adjusting your search or status filter to find stories in this sprint."
+            }
+            action={
+              stories.length === 0 ? (
+                <Button variant="outline" size="sm" render={<Link href="/tasks" />} className="cursor-pointer">
+                  Browse Tasks
+                </Button>
+              ) : undefined
+            }
+          />
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <StaggerGrid className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filteredStories.map((story) => (
               <StoryCard key={story._id} story={story} storyStages={storyStages} />
             ))}
-          </div>
+          </StaggerGrid>
         )}
       </div>
 

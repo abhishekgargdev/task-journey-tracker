@@ -23,9 +23,12 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import EmptyState from "@/components/shared/EmptyState";
+import SprintStatusBadge from "@/components/shared/SprintStatusBadge";
+import AnimatedCard from "@/components/shared/AnimatedCard";
+import StaggerGrid from "@/components/shared/StaggerGrid";
 import {
   Card,
   CardContent,
@@ -111,28 +114,6 @@ function DatePickerField({
       </Popover>
       {error && <p className="text-xs text-destructive font-medium">{error}</p>}
     </div>
-  );
-}
-
-function SprintStatusBadge({ status }: { status: SprintItem["status"] }) {
-  if (status === "active") {
-    return (
-      <Badge className="bg-emerald-500/10 text-emerald-600 border-none text-[10px] uppercase font-bold">
-        Active
-      </Badge>
-    );
-  }
-  if (status === "hold") {
-    return (
-      <Badge className="bg-amber-500/10 text-amber-600 border-none text-[10px] uppercase font-bold">
-        On Hold
-      </Badge>
-    );
-  }
-  return (
-    <Badge className="bg-status-completed/10 text-status-completed border-none text-[10px] uppercase font-bold">
-      Completed
-    </Badge>
   );
 }
 
@@ -330,27 +311,25 @@ export default function SprintsPage() {
           ))}
         </div>
       ) : sprints.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-card p-12 text-center max-w-lg mx-auto space-y-4">
-          <Milestone className="h-10 w-10 text-muted-foreground mx-auto" />
-          <h3 className="text-base font-semibold text-foreground">No sprints defined</h3>
-          <p className="text-sm text-muted-foreground leading-normal">
-            Create your first sprint to start assigning user stories and tracking delivery progress.
-          </p>
-          <Button onClick={openCreateDialog} size="sm">
-            Create First Sprint
-          </Button>
-        </div>
+        <EmptyState
+          icon={Milestone}
+          title="No sprints defined"
+          description="Create your first sprint to start assigning user stories and tracking delivery progress."
+          action={
+            <Button onClick={openCreateDialog} size="sm" className="cursor-pointer">
+              Create First Sprint
+            </Button>
+          }
+        />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <StaggerGrid className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {sprints.map((sprint) => {
             const storyCount = getStoryCount(sprint._id);
             const canToggleHold = sprint.status === "active" || sprint.status === "hold";
 
             return (
-              <Card
-                key={sprint._id}
-                className="shadow-sm border-border bg-card flex flex-col justify-between hover:border-primary/20 transition-all"
-              >
+              <AnimatedCard key={sprint._id}>
+                <Card className="shadow-sm border-border bg-card flex flex-col justify-between h-full hover:border-primary/20 transition-colors">
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between gap-2">
                     <CardTitle className="text-sm font-bold text-foreground line-clamp-2">
@@ -402,10 +381,11 @@ export default function SprintsPage() {
                     View Stories
                   </Button>
                 </CardFooter>
-              </Card>
+                </Card>
+              </AnimatedCard>
             );
           })}
-        </div>
+        </StaggerGrid>
       )}
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}>

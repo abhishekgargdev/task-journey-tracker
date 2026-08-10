@@ -28,9 +28,15 @@ import {
   AlertCircle,
   HelpCircle,
   ArrowRight,
+  Milestone,
+  BookOpen,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import EmptyState from "@/components/shared/EmptyState";
+import SprintStatusBadge from "@/components/shared/SprintStatusBadge";
+import AnimatedCard from "@/components/shared/AnimatedCard";
+import StaggerGrid from "@/components/shared/StaggerGrid";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -321,7 +327,7 @@ export default function DashboardClient({ stories, sprints, storyStages, userNam
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 min-w-0">
       {/* Welcome Banner */}
       <div className="rounded-xl border border-primary/10 bg-gradient-to-r from-primary/5 via-primary/10 to-transparent p-6 shadow-sm">
         <h2 className="text-xl font-bold text-foreground sm:text-2xl font-sans">
@@ -392,7 +398,7 @@ export default function DashboardClient({ stories, sprints, storyStages, userNam
       </div>
 
       {/* Recharts Analytics Charts Grid */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 min-w-0">
         {/* Horizontal Bar Chart: Stories by Stage */}
         <Card className="lg:col-span-2 shadow-sm border-border bg-card">
           <CardHeader>
@@ -482,24 +488,27 @@ export default function DashboardClient({ stories, sprints, storyStages, userNam
       <div className="space-y-4">
         <h3 className="text-base font-bold font-sans text-foreground">Sprint Overview</h3>
         {sprints.length === 0 ? (
-          <Card className="border border-border bg-card p-6 text-center text-xs text-muted-foreground italic">
-            No sprints stored in the database.
-          </Card>
+          <EmptyState
+            icon={Milestone}
+            title="No sprints yet"
+            description="Create a sprint to organize user stories into time-boxed delivery windows."
+            action={
+              <Button size="sm" render={<Link href="/sprints" />} className="cursor-pointer">
+                Go to Sprints
+              </Button>
+            }
+          />
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <StaggerGrid className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {sprints.map((sprint) => {
               const details = getSprintDetails(sprint);
               return (
-                <Card key={sprint._id} className="shadow-sm border-border bg-card flex flex-col justify-between">
+                <AnimatedCard key={sprint._id}>
+                <Card className="shadow-sm border-border bg-card flex flex-col justify-between h-full">
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between gap-2">
                       <CardTitle className="text-sm font-bold text-foreground line-clamp-1">{sprint.name}</CardTitle>
-                      <Badge className={cn(
-                        "border-none py-0.5 text-[10px] uppercase font-bold",
-                        sprint.status === "active" ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
-                      )}>
-                        {sprint.status === "active" ? "Active" : "On Hold"}
-                      </Badge>
+                      <SprintStatusBadge status={sprint.status} />
                     </div>
                     <CardDescription className="text-[11px] flex items-center gap-1.5 pt-0.5">
                       <Calendar className="h-3 w-3" />
@@ -527,9 +536,10 @@ export default function DashboardClient({ stories, sprints, storyStages, userNam
                     </Button>
                   </CardFooter>
                 </Card>
+                </AnimatedCard>
               );
             })}
-          </div>
+          </StaggerGrid>
         )}
       </div>
 
@@ -567,16 +577,19 @@ export default function DashboardClient({ stories, sprints, storyStages, userNam
         </div>
 
         {filteredStories.length === 0 ? (
-          <Card className="border border-border bg-card p-12 text-center text-xs text-muted-foreground italic">
-            No user stories match the filters or search inputs.
-          </Card>
+          <EmptyState
+            icon={BookOpen}
+            title="No stories match"
+            description="No user stories match the current filters or search. Try adjusting your search or task filter."
+          />
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <StaggerGrid className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filteredStories.map((story) => {
               const details = getStoryStageDetails(story);
               const progressPct = details.total > 0 ? (details.completed / details.total) * 100 : 0;
               return (
-                <Card key={story._id} className="shadow-sm border-border bg-card hover:border-primary/20 transition-all flex flex-col justify-between">
+                <AnimatedCard key={story._id}>
+                <Card className="shadow-sm border-border bg-card hover:border-primary/20 transition-colors flex flex-col justify-between h-full">
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between gap-3">
                       <CardTitle className="text-sm font-bold text-foreground hover:text-primary transition-colors">
@@ -630,9 +643,10 @@ export default function DashboardClient({ stories, sprints, storyStages, userNam
                     </Button>
                   </CardFooter>
                 </Card>
+                </AnimatedCard>
               );
             })}
-          </div>
+          </StaggerGrid>
         )}
       </div>
 

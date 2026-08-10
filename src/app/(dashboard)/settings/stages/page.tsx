@@ -31,6 +31,8 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import EmptyState from "@/components/shared/EmptyState";
+import { STAGE_COLORS } from "@/lib/stage-colors";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -57,17 +59,7 @@ interface Stage {
   defaultOrder: number;
 }
 
-const COLORS = [
-  { name: "slate", label: "Slate", bg: "bg-slate-500", text: "text-slate-500" },
-  { name: "indigo", label: "Indigo", bg: "bg-indigo-500", text: "text-indigo-500" },
-  { name: "blue", label: "Blue", bg: "bg-blue-500", text: "text-blue-500" },
-  { name: "emerald", label: "Emerald", bg: "bg-emerald-500", text: "text-emerald-500" },
-  { name: "amber", label: "Amber", bg: "bg-amber-500", text: "text-amber-500" },
-  { name: "rose", label: "Blocked/Rose", bg: "bg-rose-500", text: "text-rose-500" },
-  { name: "violet", label: "Violet", bg: "bg-violet-500", text: "text-violet-500" },
-  { name: "cyan", label: "Cyan", bg: "bg-cyan-500", text: "text-cyan-500" },
-  { name: "orange", label: "Orange", bg: "bg-orange-500", text: "text-orange-500" },
-];
+const COLORS = STAGE_COLORS.map(({ name, label, bg, text }) => ({ name, label, bg, text }));
 
 const stageSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
@@ -296,6 +288,18 @@ export default function StagesSettingsPage() {
           <p className="text-sm font-semibold text-destructive">{errorMessage}</p>
           <Button onClick={fetchStages} variant="outline" size="sm">Retry</Button>
         </div>
+      ) : stages.length === 0 ? (
+        <EmptyState
+          icon={Settings}
+          title="No stages defined yet"
+          description="Your delivery pipeline catalog is empty. Add the first stage to define how user stories progress through your workflow."
+          action={
+            <Button onClick={openAddDialog} size="sm" className="cursor-pointer">
+              <Plus className="h-4 w-4 mr-1" />
+              Add First Stage
+            </Button>
+          }
+        />
       ) : (
         <Card className="shadow-sm overflow-hidden border-border">
           <CardHeader className="pb-2">

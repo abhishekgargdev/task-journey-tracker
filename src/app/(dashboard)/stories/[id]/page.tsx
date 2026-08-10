@@ -14,6 +14,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import StatusBadge from "@/components/shared/StatusBadge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/components/ui/toast";
 import JourneyLadder from "@/components/journey/JourneyLadder";
@@ -137,23 +138,6 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
     fetchStoryDetails();
   }, [storyId]);
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "not_started":
-        return <Badge className="bg-status-not-started/10 text-status-not-started border-none font-semibold">Not Started</Badge>;
-      case "in_progress":
-        return <Badge className="bg-status-in-progress/10 text-status-in-progress border-none font-semibold">In Progress</Badge>;
-      case "blocked":
-        return <Badge className="bg-status-blocked/10 text-status-blocked border-none font-semibold animate-pulse">Blocked</Badge>;
-      case "on_hold":
-        return <Badge className="bg-status-on-hold/10 text-status-on-hold border-none font-semibold">On Hold</Badge>;
-      case "completed":
-        return <Badge className="bg-status-completed/10 text-status-completed border-none font-semibold">Completed</Badge>;
-      default:
-        return null;
-    }
-  };
-
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-40 gap-3">
@@ -207,7 +191,7 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
               </div>
             </div>
             <div className="self-start sm:self-center">
-              {getStatusBadge(story.overallStatus)}
+              <StatusBadge status={story.overallStatus} />
             </div>
           </div>
         </CardHeader>

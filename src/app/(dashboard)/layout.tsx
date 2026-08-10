@@ -35,7 +35,7 @@ export default async function DashboardLayout({
         <Header user={user} />
 
         {/* Page Content */}
-        <main className="flex-1 flex flex-col p-4 sm:p-6 lg:p-8">
+        <main className="flex-1 flex flex-col p-4 sm:p-6 lg:p-8 min-w-0 overflow-x-hidden">
           <AnimateWrapper>{children}</AnimateWrapper>
         </main>
       </div>

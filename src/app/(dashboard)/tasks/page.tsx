@@ -30,6 +30,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
+import EmptyState from "@/components/shared/EmptyState";
 
 interface TaskOwner {
   _id: string;
@@ -163,19 +164,21 @@ export default function TasksPage() {
           ))}
         </div>
       ) : tasks.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-card p-12 text-center max-w-lg mx-auto space-y-4">
-          <CheckSquare className="h-10 w-10 text-muted-foreground mx-auto" />
-          <h3 className="text-base font-semibold text-foreground">No tasks defined</h3>
-          <p className="text-sm text-muted-foreground leading-normal">
-            There are currently no engineering tasks stored. Create a task to begin attaching user stories and custom stages.
-          </p>
-          <Button onClick={openCreateDialog} size="sm">Create First Task</Button>
-        </div>
+        <EmptyState
+          icon={CheckSquare}
+          title="No tasks defined"
+          description="There are currently no engineering tasks stored. Create a task to begin attaching user stories and custom stages."
+          action={
+            <Button onClick={openCreateDialog} size="sm" className="cursor-pointer">
+              Create First Task
+            </Button>
+          }
+        />
       ) : (
         <>
           {/* Desktop Table View */}
-          <div className="hidden md:block">
-            <Card className="shadow-sm overflow-hidden border-border bg-card">
+          <div className="hidden md:block overflow-x-auto min-w-0">
+            <Card className="shadow-sm overflow-hidden border-border bg-card min-w-[640px]">
               <CardContent className="p-0">
                 <table className="w-full text-left text-sm border-collapse">
                   <thead>

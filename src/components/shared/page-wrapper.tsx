@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import React from "react";
+import { pageTransition } from "@/lib/motion";
 
 interface PageWrapperProps {
   children: React.ReactNode;
@@ -11,11 +12,11 @@ interface PageWrapperProps {
 export function PageWrapper({ children, className = "" }: PageWrapperProps) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 12 }}
-      transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-      className={`flex-1 flex flex-col w-full ${className}`}
+      initial={pageTransition.initial}
+      animate={pageTransition.animate}
+      exit={pageTransition.exit}
+      transition={pageTransition.transition}
+      className={`flex-1 flex flex-col w-full min-w-0 ${className}`}
     >
       {children}
     </motion.div>

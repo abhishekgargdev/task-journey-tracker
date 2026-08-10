@@ -15,8 +15,11 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import EmptyState from "@/components/shared/EmptyState";
+import StatusBadge from "@/components/shared/StatusBadge";
+import StageBadge from "@/components/shared/StageBadge";
+import StaggerGrid from "@/components/shared/StaggerGrid";
 import { toast } from "@/components/ui/toast";
 
 interface TaskItem {
@@ -136,22 +139,11 @@ export default function StoriesPage() {
     return matchesSearch && matchesSprint && matchesStage && matchesStatus;
   });
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "not_started":
-        return <Badge className="bg-status-not-started/10 text-status-not-started border-none font-semibold">Not Started</Badge>;
-      case "in_progress":
-        return <Badge className="bg-status-in-progress/10 text-status-in-progress border-none font-semibold">In Progress</Badge>;
-      case "blocked":
-        return <Badge className="bg-status-blocked/10 text-status-blocked border-none font-semibold">Blocked</Badge>;
-      case "on_hold":
-        return <Badge className="bg-status-on-hold/10 text-status-on-hold border-none font-semibold">On Hold</Badge>;
-      case "completed":
-        return <Badge className="bg-status-completed/10 text-status-completed border-none font-semibold">Completed</Badge>;
-      default:
-        return null;
-    }
-  };
+  const hasActiveFilters =
+    searchQuery !== "" ||
+    selectedSprint !== "all" ||
+    selectedStage !== "all" ||
+    selectedStatus !== "all";
 
   return (
     <div className="space-y-6">
@@ -254,21 +246,33 @@ export default function StoriesPage() {
           ))}
         </div>
       ) : filteredStories.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-card p-12 text-center max-w-lg mx-auto space-y-4">
-          <FolderOpen className="h-10 w-10 text-muted-foreground mx-auto" />
-          <h3 className="text-base font-semibold text-foreground">No stories match filters</h3>
-          <p className="text-sm text-muted-foreground leading-normal">
-            No user stories matched your selected filters or search terms. Try loosening your criteria or resetting filters.
-          </p>
-          <Button onClick={handleResetFilters} variant="outline" size="sm">Reset Filters</Button>
-        </div>
+        <EmptyState
+          icon={FolderOpen}
+          title={stories.length === 0 ? "No user stories yet" : "No stories match filters"}
+          description={
+            stories.length === 0
+              ? "Create a task and attach user stories to start tracking delivery journeys through your pipeline."
+              : "No user stories matched your selected filters or search terms. Try loosening your criteria or resetting filters."
+          }
+          action={
+            hasActiveFilters ? (
+              <Button onClick={handleResetFilters} variant="outline" size="sm" className="cursor-pointer">
+                Reset Filters
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" render={<Link href="/tasks" />} className="cursor-pointer">
+                Browse Tasks
+              </Button>
+            )
+          }
+        />
       ) : (
         <>
           {/* Desktop Table View */}
-          <div className="hidden md:block">
-            <Card className="shadow-sm overflow-hidden border-border bg-card">
+          <div className="hidden md:block overflow-x-auto min-w-0">
+            <Card className="shadow-sm overflow-hidden border-border bg-card min-w-[720px]">
               <CardContent className="p-0">
-                <table className="w-full text-left text-sm border-collapse">
+                <table className="w-full text-left text-sm border-collapse" aria-label="User stories catalog">
                   <thead>
                     <tr className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       <th className="py-3 px-4">User Story</th>
@@ -306,16 +310,13 @@ export default function StoriesPage() {
                             </span>
                           </td>
                           <td className="py-3 px-4">
-                            <Badge className="border-none capitalize font-semibold bg-accent/80 hover:bg-accent/80 flex items-center gap-1.5 self-start w-fit">
-                              <span className={`h-2.5 w-2.5 rounded-full bg-${details.colorTag}-500`} />
-                              {details.name}
-                            </Badge>
+                            <StageBadge name={details.name} colorTag={details.colorTag} />
                           </td>
                           <td className="py-3 px-4 font-medium text-foreground">
                             {details.completed} of {details.total} complete
                           </td>
                           <td className="py-3 px-4">
-                            {getStatusBadge(story.overallStatus)}
+                            <StatusBadge status={story.overallStatus} />
                           </td>
                           <td className="py-3 px-4 text-right">
                             <Button variant="outline" size="sm" render={<Link href={`/tasks/${story.task?._id}`} />}>
@@ -333,7 +334,7 @@ export default function StoriesPage() {
           </div>
 
           {/* Mobile Cards View */}
-          <div className="grid gap-4 sm:grid-cols-2 md:hidden">
+          <StaggerGrid className="grid gap-4 sm:grid-cols-2 md:hidden">
             {filteredStories.map((story) => {
               const details = getStoryStageDetails(story);
               return (
@@ -357,10 +358,7 @@ export default function StoriesPage() {
                   <CardContent className="pb-3 pt-2 text-xs border-t border-border/60 bg-muted/5 flex justify-between items-center">
                     <div className="flex flex-col gap-1">
                       <span className="text-[9px] uppercase font-bold text-muted-foreground tracking-wider">Active Stage</span>
-                      <Badge className="border-none capitalize font-semibold bg-accent/80 hover:bg-accent/80 flex items-center gap-1.5">
-                        <span className={`h-2 w-2 rounded-full bg-${details.colorTag}-500`} />
-                        {details.name}
-                      </Badge>
+                      <StageBadge name={details.name} colorTag={details.colorTag} size="sm" />
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <span className="text-[9px] uppercase font-bold text-muted-foreground tracking-wider">Completion</span>
@@ -368,7 +366,7 @@ export default function StoriesPage() {
                     </div>
                   </CardContent>
                   <CardFooter className="pt-2 border-t border-border flex justify-between items-center">
-                    {getStatusBadge(story.overallStatus)}
+                    <StatusBadge status={story.overallStatus} size="sm" />
                     <Button variant="outline" size="sm" render={<Link href={`/tasks/${story.task?._id}`} />}>
                       View Task
                       <ArrowRight className="h-3 w-3 ml-1" />
@@ -377,7 +375,7 @@ export default function StoriesPage() {
                 </Card>
               );
             })}
-          </div>
+          </StaggerGrid>
         </>
       )}
     </div>

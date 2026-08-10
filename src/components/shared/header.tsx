@@ -73,7 +73,7 @@ export function Header({ user }: HeaderProps) {
         </Sheet>
 
         {/* Page Title */}
-        <h1 className="text-lg font-semibold text-foreground tracking-tight sm:text-xl">
+        <h1 className="text-base sm:text-lg md:text-xl font-semibold text-foreground tracking-tight truncate min-w-0 max-w-[45vw] sm:max-w-none">
           {getPageTitle(pathname)}
         </h1>
       </div>
@@ -84,7 +84,11 @@ export function Header({ user }: HeaderProps) {
         {/* Profile Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger render={
-            <button className="flex items-center gap-2 rounded-full p-1.5 text-sm hover:bg-accent focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">
+            <button
+              type="button"
+              aria-label="Open account menu"
+              className="flex items-center gap-2 rounded-full p-1.5 text-sm hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            >
               <Avatar className="h-8 w-8 ring-2 ring-primary/10">
                 <AvatarFallback className="bg-primary text-primary-foreground font-semibold text-xs">
                   {user ? getInitials(user.name || "") : "U"}

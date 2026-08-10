@@ -1,5 +1,6 @@
 import React, { Suspense } from "react";
 import { redirect, notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { Loader2 } from "lucide-react";
 
 import dbConnect from "@/lib/mongodb";
@@ -7,8 +8,27 @@ import { Sprint } from "@/models/Sprint";
 import { UserStory } from "@/models/UserStory";
 import { StoryStage } from "@/models/StoryStage";
 import { getSession } from "@/lib/session";
+import { pageMetadata } from "@/lib/site-metadata";
 import SprintDetailClient from "@/components/sprints/SprintDetailClient";
 import { Card } from "@/components/ui/card";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  try {
+    await dbConnect();
+    const sprint = await Sprint.findById(id).select("name").lean();
+    if (sprint) {
+      return pageMetadata(sprint.name, `Sprint details, hold history, and stories for ${sprint.name}.`);
+    }
+  } catch {
+    // fall through to default
+  }
+  return pageMetadata("Sprint Detail", "View sprint details, hold history, and linked user stories.");
+}
 
 export default async function SprintDetailPage({
   params,

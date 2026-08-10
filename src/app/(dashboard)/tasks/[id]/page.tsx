@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   DndContext,
   closestCenter,
@@ -50,6 +49,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
+import EmptyState from "@/components/shared/EmptyState";
+import StageBadge from "@/components/shared/StageBadge";
+import { getStageColorConfig } from "@/lib/stage-colors";
+import { cn } from "@/lib/utils";
 
 interface TaskOwner {
   _id: string;
@@ -362,14 +365,16 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
             ))}
           </div>
         ) : stories.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-card p-12 text-center max-w-md mx-auto space-y-3">
-            <FolderGit className="h-8 w-8 text-muted-foreground mx-auto" />
-            <h4 className="text-sm font-semibold text-foreground">No stories attached</h4>
-            <p className="text-xs text-muted-foreground leading-normal">
-              There are no user stories linked to this task. Add a story to map its configurable delivery pipeline.
-            </p>
-            <Button onClick={openCreateDialog} size="sm" variant="outline">Attach Story</Button>
-          </div>
+          <EmptyState
+            icon={FolderGit}
+            title="No stories attached"
+            description="There are no user stories linked to this task. Add a story to map its configurable delivery pipeline."
+            action={
+              <Button onClick={openCreateDialog} size="sm" variant="outline" className="cursor-pointer">
+                Attach Story
+              </Button>
+            }
+          />
         ) : (
           <div className="grid gap-3">
             {stories.map((story) => {
@@ -401,10 +406,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                     <div className="flex items-center gap-3 self-start sm:self-center">
                       <div className="flex flex-col items-start sm:items-end gap-1">
                         <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Current Stage</span>
-                        <Badge className={`capitalize font-semibold border-none bg-accent/80 hover:bg-accent/80 flex items-center gap-1.5`}>
-                          <span className={`h-2 w-2 rounded-full bg-${details.colorTag}-500`} />
-                          {details.name}
-                        </Badge>
+                        <StageBadge name={details.name} colorTag={details.colorTag} size="sm" />
                       </div>
                       <Button variant="outline" size="sm" className="hidden sm:inline-flex" render={<Link href="/stories" />}>
                         Track
@@ -586,7 +588,7 @@ function SortableStageCheck({ item, onToggle }: SortableStageCheckProps) {
         {item.name}
       </label>
 
-      <Badge className={`capitalize text-[9px] font-bold border-none bg-secondary/80 text-${item.colorTag}-600`}>
+      <Badge className={cn("capitalize text-[9px] font-bold border-none bg-secondary/80", getStageColorConfig(item.colorTag).text)}>
         {item.colorTag}
       </Badge>
     </div>

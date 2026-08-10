@@ -55,6 +55,7 @@ export interface StoryStage {
 
 export interface StoryStageDetails {
   name: string;
+  colorTag?: string;
   total: number;
   completed: number;
   assignee?: UserItem;
@@ -84,7 +85,13 @@ export function getStoryStageDetails(
   const completed =
     story.overallStatus === "completed" ? total : Math.max(0, story.currentStageOrder - 1);
 
-  return { name, total, completed, assignee };
+  return {
+    name,
+    colorTag: currentEntry?.stage?.colorTag,
+    total,
+    completed,
+    assignee,
+  };
 }
 
 export function aggregateStageBreakdown(stories: StoryItem[]): StageBreakdownEntry[] {

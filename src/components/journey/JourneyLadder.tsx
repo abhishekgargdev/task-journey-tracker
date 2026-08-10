@@ -41,6 +41,8 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { getStageColorConfig } from "@/lib/stage-colors";
+import EmptyState from "@/components/shared/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -651,7 +653,16 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
         <CardHeader className="border-b border-border bg-muted/20 pb-4">
           <CardTitle className="text-sm font-bold tracking-tight">Dynamic Stepper Ladder</CardTitle>
         </CardHeader>
-        <CardContent className="p-8 md:p-12 relative flex flex-col md:flex-row justify-between items-center gap-12 md:gap-4 overflow-visible min-h-[300px]">
+        <CardContent className="p-6 sm:p-8 md:p-12 relative flex flex-col md:flex-row justify-between items-center gap-12 md:gap-4 overflow-x-auto min-h-[200px] md:min-h-[300px]">
+          {totalStagesCount === 0 ? (
+            <EmptyState
+              icon={Settings}
+              title="No stages in plan"
+              description="This story has no delivery stages configured. Use Edit Stage Plan to add pipeline stages."
+              className="border-none bg-transparent p-4 w-full max-w-md"
+            />
+          ) : (
+          <>
           {/* Connector Line behind nodes */}
           {totalStagesCount > 1 && (
             <>
@@ -679,6 +690,7 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
           {/* Render Stepper Steps */}
           {story.stagePlan.map((plan, index) => {
             const stageDef = plan.stage;
+            const stageColors = getStageColorConfig(stageDef.colorTag);
             // Find corresponding StoryStage values
             const stageVal = stages.find((s) => s.stage === stageDef._id) || {
               status: "not_started",
@@ -704,7 +716,8 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
                   className={cn(
                     "h-12 w-12 rounded-full border-2 flex items-center justify-center transition-all duration-300 shadow-sm",
                     aes.bg,
-                    `hover:ring-4 hover:ring-${stageDef.colorTag}-500/20 group-hover:scale-105`
+                    "hover:ring-4 group-hover:scale-105",
+                    stageColors.ring
                   )}
                 >
                   {aes.icon}
@@ -717,13 +730,15 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
                   </h4>
                   {/* Subtle colorTag dot accent indicator */}
                   <div className="flex items-center justify-center gap-1">
-                    <span className={cn("h-1.5 w-1.5 rounded-full", `bg-${stageDef.colorTag}-500`)} />
+                    <span className={cn("h-1.5 w-1.5 rounded-full", stageColors.dot)} />
                     <span className="text-[9px] uppercase font-bold text-muted-foreground/60">{stageDef.colorTag}</span>
                   </div>
                 </div>
               </motion.div>
             );
           })}
+          </>
+          )}
         </CardContent>
       </Card>
 
@@ -1079,7 +1094,7 @@ function SortablePlannerRow({ stage, onToggle }: SortablePlannerRowProps) {
           Started
         </Badge>
       ) : (
-        <Badge className={`capitalize text-[9px] font-bold border-none bg-secondary/80 text-${stage.colorTag}-600`}>
+        <Badge className={cn("capitalize text-[9px] font-bold border-none bg-secondary/80", getStageColorConfig(stage.colorTag).text)}>
           {stage.colorTag}
         </Badge>
       )}
