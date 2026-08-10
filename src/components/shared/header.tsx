@@ -15,14 +15,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Sidebar } from "./sidebar";
-import { logoutAction } from "@/app/actions/auth";
-
-interface SessionUser {
-  id: string;
-  name: string;
-  email: string;
-  role: "admin" | "user";
-}
+import { logoutAction, type SessionUser } from "@/app/actions/auth";
 
 interface HeaderProps {
   user: SessionUser | null;

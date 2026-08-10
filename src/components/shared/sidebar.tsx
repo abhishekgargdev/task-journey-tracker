@@ -14,14 +14,7 @@ import {
   FolderGit,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { logoutAction } from "@/app/actions/auth";
-
-interface SessionUser {
-  id: string;
-  name: string;
-  email: string;
-  role: "admin" | "user";
-}
+import { logoutAction, type SessionUser } from "@/app/actions/auth";
 
 interface SidebarProps {
   user: SessionUser | null;

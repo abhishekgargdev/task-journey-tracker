@@ -11,7 +11,7 @@ export interface SessionUser {
   id: string;
   name: string;
   email: string;
-  role: "admin" | "user";
+  role: "admin" | "lead" | "engineer";
 }
 
 // Seed helper to set up initial admin and standard user accounts
@@ -27,7 +27,7 @@ export async function seedDemoUsers() {
     await User.create({
       name: "Admin User",
       email: adminEmail,
-      password: hashedAdminPassword,
+      passwordHash: hashedAdminPassword,
       role: "admin",
     });
     console.log("Seeded admin account:", adminEmail);
@@ -39,8 +39,8 @@ export async function seedDemoUsers() {
     await User.create({
       name: "Standard User",
       email: userEmail,
-      password: hashedUserPassword,
-      role: "user",
+      passwordHash: hashedUserPassword,
+      role: "engineer",
     });
     console.log("Seeded standard user account:", userEmail);
   }
@@ -68,7 +68,7 @@ export async function loginAction(prevState: any, formData: FormData) {
       return { error: "Invalid email or password." };
     }
 
-    const passwordsMatch = await bcrypt.compare(password, user.password);
+    const passwordsMatch = await bcrypt.compare(password, user.passwordHash);
     if (!passwordsMatch) {
       return { error: "Invalid email or password." };
     }
