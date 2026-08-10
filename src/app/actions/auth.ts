@@ -8,7 +8,6 @@ export interface SessionUser {
   id: string;
   name?: string | null;
   email?: string | null;
-  role: "admin" | "lead" | "engineer";
 }
 
 // Seed helper to set up initial admin and standard user accounts
@@ -25,7 +24,6 @@ export async function seedDemoUsers() {
       name: "Admin User",
       email: adminEmail,
       passwordHash: hashedAdminPassword,
-      role: "admin",
     });
     console.log("Seeded admin account:", adminEmail);
   }
@@ -37,7 +35,6 @@ export async function seedDemoUsers() {
       name: "Standard User",
       email: userEmail,
       passwordHash: hashedUserPassword,
-      role: "engineer",
     });
     console.log("Seeded standard user account:", userEmail);
   }

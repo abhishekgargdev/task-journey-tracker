@@ -1,14 +1,16 @@
 import React from "react";
-import { auth } from "@/auth";
-import { requireAdmin } from "@/lib/authz";
+import { getSession } from "@/lib/session";
+import { redirect } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Users as UsersIcon, Plus, UserCheck, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default async function UsersPage() {
-  const session = await auth();
-  requireAdmin(session);
+  const session = await getSession();
+  if (!session) {
+    redirect("/login");
+  }
 
   const mockUsers = [
     { name: "Admin User", email: "admin@company.com", role: "admin", status: "Active" },

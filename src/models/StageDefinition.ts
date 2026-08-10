@@ -25,7 +25,7 @@ const StageDefinitionSchema = new Schema<IStageDefinition>(
   { timestamps: true }
 );
 
-StageDefinitionSchema.pre("validate", function (this: any, next: any) {
+StageDefinitionSchema.pre("validate", function (this: any) {
   if (this.name && !this.key) {
     this.key = this.name
       .toLowerCase()
@@ -33,7 +33,6 @@ StageDefinitionSchema.pre("validate", function (this: any, next: any) {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
   }
-  next();
 });
 
 export const StageDefinition: Model<IStageDefinition> =

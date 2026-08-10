@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Menu, LogOut, Shield, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,7 +16,6 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Sidebar } from "./sidebar";
 import { type SessionUser } from "@/app/actions/auth";
-import { signOut } from "next-auth/react";
 
 interface HeaderProps {
   user: SessionUser | null;
@@ -24,13 +23,24 @@ interface HeaderProps {
 
 export function Header({ user }: HeaderProps) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      router.push("/login");
+      router.refresh();
+    } catch (err) {
+      console.error("Logout failed:", err);
+    }
+  };
 
   const getPageTitle = (path: string) => {
     if (path === "/") return "Dashboard Overview";
     if (path.startsWith("/tasks")) return "Tasks Delivery";
     if (path.startsWith("/sprints")) return "Sprints Planning";
     if (path.startsWith("/stories")) return "User Stories Catalog";
-    if (path.startsWith("/stages")) return "Stage Catalog Configuration";
+    if (path.startsWith("/settings/stages")) return "Stage Catalog Configuration";
     if (path.startsWith("/users")) return "User Directory";
     return "Task Journey Tracker";
   };
@@ -69,13 +79,7 @@ export function Header({ user }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-4">
-        {/* User Role Badge */}
-        {user?.role === "admin" && (
-          <div className="hidden sm:flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-            <Shield className="h-3.5 w-3.5" />
-            Admin Mode
-          </div>
-        )}
+
 
         {/* Profile Dropdown */}
         <DropdownMenu>
@@ -99,13 +103,10 @@ export function Header({ user }: HeaderProps) {
             <div className="flex flex-col px-2 py-1.5 text-xs text-muted-foreground sm:hidden">
               <span className="font-semibold text-foreground">{user?.name}</span>
               <span>{user?.email}</span>
-              {user?.role === "admin" && (
-                <span className="mt-1 font-bold text-primary text-[10px]">Admin Privilege</span>
-              )}
             </div>
-            {user?.role === "admin" && <DropdownMenuSeparator className="sm:hidden" />}
+            <DropdownMenuSeparator className="sm:hidden" />
             <DropdownMenuItem render={
-              <button onClick={() => signOut({ callbackUrl: "/login" })} className="flex w-full items-center gap-2 cursor-pointer text-destructive focus:text-destructive-foreground bg-transparent border-none text-left w-full h-full p-1.5 text-sm" />
+              <button onClick={handleLogout} className="flex w-full items-center gap-2 cursor-pointer text-destructive focus:text-destructive-foreground bg-transparent border-none text-left w-full h-full p-1.5 text-sm" />
             }>
               <LogOut className="h-4 w-4" />
               <span>Log out</span>

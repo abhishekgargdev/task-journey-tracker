@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { signIn } from "next-auth/react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +14,7 @@ import { FolderGit, Loader2, AlertCircle } from "lucide-react";
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Invalid corporate email address." }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters." }),
+  password: z.string().min(1, { message: "Password is required." }),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -41,14 +40,18 @@ export default function LoginPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await signIn("credentials", {
-        email: data.email,
-        password: data.password,
-        redirect: false,
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
       });
 
-      if (result?.error) {
-        setError("Invalid email or password.");
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(result.error || "Invalid email or password.");
       } else {
         router.push("/");
         router.refresh();
@@ -85,7 +88,7 @@ export default function LoginPage() {
           <CardHeader>
             <CardTitle className="text-xl">Sign In</CardTitle>
             <CardDescription>
-              Enter your corporate credentials to access the delivery tracker.
+              Enter your credentials to access the delivery tracker.
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit(onSubmit)}>
@@ -98,11 +101,11 @@ export default function LoginPage() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="email">Corporate Email</Label>
+                <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="name@company.com"
+                  placeholder="you@bajajfinserv.local"
                   disabled={isLoading}
                   className="bg-card"
                   {...register("email")}
@@ -143,8 +146,7 @@ export default function LoginPage() {
 
               <div className="rounded-lg bg-muted/60 p-3 text-[11px] text-muted-foreground w-full space-y-2 border border-border">
                 <p className="font-semibold text-foreground">Local Development Accounts:</p>
-                <p>🔑 <span className="font-semibold text-foreground">Admin:</span> admin@company.com / admin123</p>
-                <p>🔑 <span className="font-semibold text-foreground">Standard:</span> user@company.com / user123</p>
+                <p>🔑 <span className="font-semibold text-foreground">Seed User:</span> you@bajajfinserv.local / Test@123</p>
                 <p className="text-[10px] italic pt-1 border-t border-border mt-1 leading-normal">
                   {/* Note: signup/register pages are intentionally disabled. Accounts are provisioned solely via a seed script. */}
                   Registration is disabled. Accounts can only be provisioned via seed script.

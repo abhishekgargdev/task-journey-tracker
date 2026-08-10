@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   CheckSquare,
@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type SessionUser } from "@/app/actions/auth";
-import { signOut } from "next-auth/react";
 
 interface SidebarProps {
   user: SessionUser | null;
@@ -25,6 +24,17 @@ interface SidebarProps {
 
 export function Sidebar({ user, className, isMobile = false }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      router.push("/login");
+      router.refresh();
+    } catch (err) {
+      console.error("Logout failed:", err);
+    }
+  };
 
   const mainNavItems = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -34,7 +44,7 @@ export function Sidebar({ user, className, isMobile = false }: SidebarProps) {
   ];
 
   const adminNavItems = [
-    { name: "Stage Catalog", href: "/stages", icon: Settings },
+    { name: "Stage Catalog", href: "/settings/stages", icon: Settings },
     { name: "Users", href: "/users", icon: UsersIcon },
   ];
 
@@ -97,41 +107,39 @@ export function Sidebar({ user, className, isMobile = false }: SidebarProps) {
           </nav>
         </div>
 
-        {/* Settings/Admin Section - Hide if not admin */}
-        {user?.role === "admin" && (
-          <div className="space-y-1">
-            <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">
-              Admin settings
-            </p>
-            <nav className="space-y-1">
-              {adminNavItems.map((item) => {
-                const active = isActive(item.href);
-                return (
-                  <Link
-                    key={item.name}
-                    href={item.href}
+        {/* Settings/Admin Section */}
+        <div className="space-y-1">
+          <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">
+            Settings
+          </p>
+          <nav className="space-y-1">
+            {adminNavItems.map((item) => {
+              const active = isActive(item.href);
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  className={cn(
+                    "group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150",
+                    active
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
+                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                  )}
+                >
+                  <item.icon
                     className={cn(
-                      "group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150",
+                      "h-4 w-4 flex-shrink-0 transition-colors duration-150",
                       active
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
-                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                        ? "text-primary"
+                        : "text-sidebar-foreground/50 group-hover:text-sidebar-foreground"
                     )}
-                  >
-                    <item.icon
-                      className={cn(
-                        "h-4 w-4 flex-shrink-0 transition-colors duration-150",
-                        active
-                          ? "text-primary"
-                          : "text-sidebar-foreground/50 group-hover:text-sidebar-foreground"
-                      )}
-                    />
-                    <span>{item.name}</span>
-                  </Link>
-                );
-              })}
-            </nav>
-          </div>
-        )}
+                  />
+                  <span>{item.name}</span>
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
       </div>
 
       {/* User Footer Card */}
@@ -142,11 +150,11 @@ export function Sidebar({ user, className, isMobile = false }: SidebarProps) {
               {user?.name || "No User"}
             </span>
             <span className="text-[10px] text-muted-foreground truncate">
-              {user?.role === "admin" ? "Administrator" : "Standard User"}
+              {user?.email || ""}
             </span>
           </div>
           <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
+            onClick={handleLogout}
             title="Logout"
             className="rounded-md p-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-destructive transition-colors focus:outline-none cursor-pointer border-none bg-transparent"
           >
