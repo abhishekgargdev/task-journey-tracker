@@ -1,81 +1,347 @@
-import React from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { CheckSquare, Calendar, User } from "lucide-react";
+"use client";
+
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { 
+  CheckSquare, 
+  Plus, 
+  ExternalLink, 
+  Loader2, 
+  User, 
+  Calendar,
+  AlertCircle,
+  Eye
+} from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { toast } from "@/components/ui/toast";
+
+interface TaskOwner {
+  _id: string;
+  name: string;
+  email: string;
+}
+
+interface TaskItem {
+  _id: string;
+  title: string;
+  description?: string;
+  adoTaskLink?: string;
+  owner?: TaskOwner;
+  createdAt: string;
+}
+
+const taskFormSchema = z.object({
+  title: z.string().min(2, { message: "Task title must be at least 2 characters." }),
+  description: z.string().optional(),
+  adoTaskLink: z.string().url({ message: "Must be a valid Azure DevOps URL." }).or(z.literal("")),
+});
+
+type TaskFormValues = z.infer<typeof taskFormSchema>;
 
 export default function TasksPage() {
-  const mockTasks = [
-    { id: "T-101", title: "Implement MongoDB connection retry policy", assignee: "Sarah Jenkins", sprint: "Sprint 4", status: "completed" },
-    { id: "T-102", title: "Design database schemas for stage configuration", assignee: "Alex Rivera", sprint: "Sprint 4", status: "in_progress" },
-    { id: "T-103", title: "Set up Framer Motion page transitions", assignee: "Marcus Chen", sprint: "Sprint 4", status: "completed" },
-    { id: "T-104", title: "Resolve session cookie token serialization issues", assignee: "Sarah Jenkins", sprint: "Sprint 5", status: "not_started" },
-    { id: "T-105", title: "Integrate tailwind v4 theme variables into components", assignee: "Alex Rivera", sprint: "Sprint 4", status: "blocked" },
-  ];
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [formOpen, setFormOpen] = useState(false);
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "not_started":
-        return <Badge className="bg-status-not-started/10 text-status-not-started border-none font-semibold">Not Started</Badge>;
-      case "in_progress":
-        return <Badge className="bg-status-in-progress/10 text-status-in-progress border-none font-semibold">In Progress</Badge>;
-      case "blocked":
-        return <Badge className="bg-status-blocked/10 text-status-blocked border-none font-semibold">Blocked</Badge>;
-      case "completed":
-        return <Badge className="bg-status-completed/10 text-status-completed border-none font-semibold">Completed</Badge>;
-      default:
-        return null;
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<TaskFormValues>({
+    resolver: zodResolver(taskFormSchema),
+    defaultValues: {
+      title: "",
+      description: "",
+      adoTaskLink: "",
+    },
+  });
+
+  const fetchTasks = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch("/api/tasks");
+      if (!res.ok) throw new Error("Failed to load tasks.");
+      const data = await res.json();
+      setTasks(data);
+    } catch (err: any) {
+      console.error(err);
+      toast.add({
+        title: "Error loading tasks",
+        description: "Could not retrieve the task inventory from the database.",
+        type: "error",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTasks();
+  }, []);
+
+  const openCreateDialog = () => {
+    reset({
+      title: "",
+      description: "",
+      adoTaskLink: "",
+    });
+    setFormOpen(true);
+  };
+
+  const handleFormSubmit = async (values: TaskFormValues) => {
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to create task.");
+      }
+
+      toast.add({
+        title: "Task created successfully",
+        description: `Task "${values.title}" has been saved.`,
+        type: "success",
+      });
+
+      setFormOpen(false);
+      fetchTasks();
+    } catch (err: any) {
+      console.error(err);
+      toast.add({
+        title: "Failed to create task",
+        description: err.message || "An unexpected error occurred.",
+        type: "error",
+      });
     }
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">Tasks Workspace</h2>
-        <p className="text-sm text-muted-foreground">Manage and track specific execution items across team sprints.</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-2xl font-bold tracking-tight text-foreground font-sans">
+            Engineering Tasks
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Monitor, assign, and organize high-level deliverables and map related story journeys.
+          </p>
+        </div>
+        <Button onClick={openCreateDialog} className="flex items-center gap-1.5 self-start cursor-pointer">
+          <Plus className="h-4 w-4" />
+          New Task
+        </Button>
       </div>
 
-      <Card className="shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-base font-semibold">Tasks Catalog</CardTitle>
-          <CardDescription>A list of active operational tasks across sprints.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-border text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  <th className="py-3 px-4 w-[100px]">ID</th>
-                  <th className="py-3 px-4">Task Description</th>
-                  <th className="py-3 px-4">Assignee</th>
-                  <th className="py-3 px-4">Sprint</th>
-                  <th className="py-3 px-4 text-right">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {mockTasks.map((task) => (
-                  <tr key={task.id} className="hover:bg-accent/40 transition-colors">
-                    <td className="py-3 px-4 font-mono font-semibold text-primary">{task.id}</td>
-                    <td className="py-3 px-4 font-medium text-foreground">{task.title}</td>
-                    <td className="py-3 px-4 text-muted-foreground text-xs">
-                      <span className="flex items-center gap-1.5">
-                        <User className="h-3 w-3" />
-                        {task.assignee}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-muted-foreground text-xs">
-                      <span className="flex items-center gap-1.5">
-                        <Calendar className="h-3 w-3" />
-                        {task.sprint}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right">{getStatusBadge(task.status)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {loading ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[...Array(6)].map((_, idx) => (
+            <Card key={idx} className="animate-pulse border-border bg-card">
+              <CardHeader className="h-20 bg-muted/20" />
+              <CardContent className="h-24 bg-card" />
+            </Card>
+          ))}
+        </div>
+      ) : tasks.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border bg-card p-12 text-center max-w-lg mx-auto space-y-4">
+          <CheckSquare className="h-10 w-10 text-muted-foreground mx-auto" />
+          <h3 className="text-base font-semibold text-foreground">No tasks defined</h3>
+          <p className="text-sm text-muted-foreground leading-normal">
+            There are currently no engineering tasks stored. Create a task to begin attaching user stories and custom stages.
+          </p>
+          <Button onClick={openCreateDialog} size="sm">Create First Task</Button>
+        </div>
+      ) : (
+        <>
+          {/* Desktop Table View */}
+          <div className="hidden md:block">
+            <Card className="shadow-sm overflow-hidden border-border bg-card">
+              <CardContent className="p-0">
+                <table className="w-full text-left text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      <th className="py-3 px-4">Task Name</th>
+                      <th className="py-3 px-4">Description</th>
+                      <th className="py-3 px-4">Owner</th>
+                      <th className="py-3 px-4">ADO Link</th>
+                      <th className="py-3 px-4">Created Date</th>
+                      <th className="py-3 px-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {tasks.map((task) => (
+                      <tr key={task._id} className="hover:bg-accent/30 transition-colors">
+                        <td className="py-3 px-4">
+                          <Link href={`/tasks/${task._id}`} className="font-semibold text-primary hover:underline">
+                            {task.title}
+                          </Link>
+                        </td>
+                        <td className="py-3 px-4 text-muted-foreground max-w-[280px] truncate" title={task.description}>
+                          {task.description || <span className="italic opacity-50">No description</span>}
+                        </td>
+                        <td className="py-3 px-4 font-medium text-foreground">
+                          {task.owner?.name || "Unassigned"}
+                        </td>
+                        <td className="py-3 px-4">
+                          {task.adoTaskLink ? (
+                            <a 
+                              href={task.adoTaskLink} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              className="text-primary hover:text-primary-foreground inline-flex items-center gap-1.5 hover:underline"
+                            >
+                              ADO Link
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground/40 font-mono text-xs">--</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-muted-foreground text-xs">
+                          {new Date(task.createdAt).toLocaleDateString(undefined, {
+                            dateStyle: "medium"
+                          })}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <Button variant="outline" size="sm" render={<Link href={`/tasks/${task._id}`} />}>
+                            <Eye className="h-3.5 w-3.5 mr-1" />
+                            View
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
+
+          {/* Mobile Cards Grid View */}
+          <div className="grid gap-4 sm:grid-cols-2 md:hidden">
+            {tasks.map((task) => (
+              <Card key={task._id} className="shadow-sm border-border bg-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base font-bold text-foreground">
+                    <Link href={`/tasks/${task._id}`} className="hover:underline">
+                      {task.title}
+                    </Link>
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Created on {new Date(task.createdAt).toLocaleDateString()}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pb-3 text-xs text-muted-foreground leading-normal min-h-[60px]">
+                  <p className="line-clamp-3">
+                    {task.description || <span className="italic opacity-50">No description provided.</span>}
+                  </p>
+                </CardContent>
+                <CardFooter className="pt-2 border-t border-border flex justify-between items-center text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary">
+                      {task.owner?.name ? task.owner.name.split(" ").map(n=>n[0]).join("").toUpperCase().slice(0, 2) : "?"}
+                    </div>
+                    <span className="font-medium text-foreground">{task.owner?.name || "Unassigned"}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {task.adoTaskLink && (
+                      <a href={task.adoTaskLink} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-muted rounded text-primary">
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    )}
+                    <Button variant="outline" size="sm" render={<Link href={`/tasks/${task._id}`} />}>
+                      View
+                    </Button>
+                  </div>
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* New Task Dialog Form */}
+      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create New Task</DialogTitle>
+            <DialogDescription>
+              Add a high-level engineering task. You can attach user stories to this task later.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit(handleFormSubmit)}>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="title">Task Title</Label>
+                <Input
+                  id="title"
+                  placeholder="e.g. Migrate Compliance Gateways"
+                  className="bg-card"
+                  {...register("title")}
+                />
+                {errors.title && (
+                  <p className="text-xs text-destructive font-medium">{errors.title.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  placeholder="Summarize engineering goals, architectural requirements, or parameters..."
+                  className="bg-card min-h-[90px]"
+                  {...register("description")}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="adoTaskLink">Azure DevOps Task Link (Optional)</Label>
+                <Input
+                  id="adoTaskLink"
+                  type="url"
+                  placeholder="https://dev.azure.com/..."
+                  className="bg-card"
+                  {...register("adoTaskLink")}
+                />
+                {errors.adoTaskLink && (
+                  <p className="text-xs text-destructive font-medium">{errors.adoTaskLink.message}</p>
+                )}
+              </div>
+            </div>
+            <DialogFooter className="pt-4" showCloseButton={true}>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create Task"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
