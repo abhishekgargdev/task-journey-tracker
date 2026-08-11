@@ -5,6 +5,7 @@ export interface IStory extends Document {
   taskName: string;
   description?: string;
   sprintUrl?: string;
+  hasSprint: boolean;
   plannedStartDate: Date;
   plannedEndDate: Date;
   actualStartDate?: Date;
@@ -23,6 +24,7 @@ const StorySchema = new Schema<IStory>(
     taskName: { type: String, required: true, trim: true },
     description: { type: String },
     sprintUrl: { type: String },
+    hasSprint: { type: Boolean, default: false, index: true },
     plannedStartDate: { type: Date, required: true },
     plannedEndDate: { type: Date, required: true },
     actualStartDate: { type: Date },

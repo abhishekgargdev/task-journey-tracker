@@ -47,7 +47,7 @@ export async function PATCH(
     const allowedFields = [
       "plannedStartDate", "plannedEndDate", "actualStartDate", "actualEndDate",
       "status", "githubRepo", "branchName", "githubPrLink", "prStatus",
-      "developBy", "notes", "implementationDescription", "adoStoryLink", "sprintId", "taskName",
+      "developBy", "notes", "implementationDescription", "adoStoryLink", "sprintId", "hasSprintId", "taskName",
     ];
 
     allowedFields.forEach((field) => {
@@ -57,6 +57,7 @@ export async function PATCH(
           value = value ? new Date(value) : null;
         }
         if (field === "developBy") value = value || null;
+        if (field === "hasSprintId" && !value) storyStage.sprintId = "";
         (storyStage as any)[field] = value;
       }
     });

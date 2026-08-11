@@ -16,7 +16,7 @@ export async function POST(
   try {
     const { id: storyId } = await params;
     const body = await request.json();
-    const { parentStoryStageId, taskName, sprintId, description, developBy, status } = body;
+    const { parentStoryStageId, taskName, sprintId, hasSprintId, description, developBy, status } = body;
 
     if (!parentStoryStageId) {
       return NextResponse.json({ error: "Parent story stage is required." }, { status: 400 });
@@ -55,7 +55,8 @@ export async function POST(
       stageOrder: siblingCount + 1,
       taskName: taskName.trim(),
       description: description?.trim() || `Sub-ticket under ${parentStage.taskName}`,
-      sprintId: sprintId?.trim() || "",
+      sprintId: hasSprintId && sprintId ? sprintId.trim() : "",
+      hasSprintId: Boolean(hasSprintId),
       developBy: developBy || undefined,
       status: status || "not_started",
       plannedStartDate: parentStage.plannedStartDate,

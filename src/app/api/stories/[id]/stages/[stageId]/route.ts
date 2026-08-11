@@ -82,6 +82,7 @@ export async function PATCH(
       "implementationDescription",
       "adoStoryLink",
       "sprintId",
+      "hasSprintId",
     ];
 
     allowedFields.forEach((field) => {
@@ -92,6 +93,9 @@ export async function PATCH(
         }
         if (field === "developBy") {
           value = value || null;
+        }
+        if (field === "hasSprintId" && !value) {
+          storyStage.sprintId = "";
         }
         (storyStage as any)[field] = value;
       }

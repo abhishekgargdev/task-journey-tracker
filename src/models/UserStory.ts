@@ -17,7 +17,7 @@ export interface IUserStory extends Document {
   description?: string;
   adoStoryLink?: string;
   task: mongoose.Types.ObjectId;
-  sprint: mongoose.Types.ObjectId;
+  sprint?: mongoose.Types.ObjectId;
   stagePlan: IStagePlanEntry[];
   currentStageOrder: number;
   overallStatus: "not_started" | "in_progress" | "blocked" | "on_hold" | "completed";
@@ -52,7 +52,7 @@ const UserStorySchema = new Schema<IUserStory>(
     description: { type: String },
     adoStoryLink: { type: String },
     task: { type: Schema.Types.ObjectId, ref: "Task", required: true, index: true },
-    sprint: { type: Schema.Types.ObjectId, ref: "Sprint", required: true, index: true },
+    sprint: { type: Schema.Types.ObjectId, ref: "Sprint", default: null, index: true },
     stagePlan: {
       type: [StagePlanEntrySchema],
       required: true,

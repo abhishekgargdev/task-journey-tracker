@@ -108,7 +108,7 @@ const storyFormSchema = z.object({
   title: z.string().min(2, { message: "Story title must be at least 2 characters." }),
   description: z.string().optional(),
   adoStoryLink: z.string().url({ message: "Must be a valid Azure DevOps URL." }).or(z.literal("")),
-  sprint: z.string().min(1, { message: "Target sprint is required." }),
+  sprint: z.string().optional().or(z.literal("")),
   assignedTo: z.string().optional(),
   state: z.enum(["New", "Active", "Resolved", "Closed"]),
   plannedStartDate: z.string().optional().or(z.literal("")),
@@ -243,7 +243,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       title: "",
       description: "",
       adoStoryLink: "",
-      sprint: sprints[0]?._id || "",
+      sprint: "",
       assignedTo: "",
       state: "New",
       plannedStartDate: "",
@@ -293,6 +293,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       const payload = {
         ...values,
         task: taskId,
+        sprint: values.sprint || null,
         stagePlan: selectedStagePlanIds,
         assignedTo: values.assignedTo || null,
         plannedStartDate: values.plannedStartDate ? new Date(values.plannedStartDate).toISOString() : null,
@@ -430,7 +431,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                       </div>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
                         <span className="bg-secondary/60 text-secondary-foreground px-2 py-0.5 rounded font-medium">
-                          {story.sprint?.name}
+                          {story.sprint?.name || "No Sprint"}
                         </span>
                         <span className="font-medium text-foreground/80">
                           {details.completed} of {details.total} stages complete
@@ -491,12 +492,13 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="story-sprint">Target Sprint</Label>
+                  <Label htmlFor="story-sprint">Target Sprint (Optional)</Label>
                   <select
                     id="story-sprint"
                     className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     {...register("sprint")}
                   >
+                    <option value="">No Sprint (Backlog)</option>
                     {sprints.map((s) => (
                       <option key={s._id} value={s._id}>
                         {s.name}

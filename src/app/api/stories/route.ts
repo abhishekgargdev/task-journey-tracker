@@ -14,6 +14,7 @@ async function createSubTicketsRecursively(
     taskName?: string;
     description?: string;
     sprintId?: string;
+    hasSprintId?: boolean;
     plannedStartDate?: string;
     plannedEndDate?: string;
     actualStartDate?: string;
@@ -39,7 +40,8 @@ async function createSubTicketsRecursively(
       stageOrder: i + 1,
       taskName: sub.taskName?.trim() || `Sub-ticket ${i + 1}`,
       description: sub.description?.trim() || `Sub-ticket under ${parentStage.taskName}`,
-      sprintId: sub.sprintId?.trim() || "",
+      sprintId: sub.hasSprintId && sub.sprintId ? sub.sprintId.trim() : "",
+      hasSprintId: Boolean(sub.hasSprintId),
       plannedStartDate: sub.plannedStartDate ? new Date(sub.plannedStartDate) : parentStage.plannedStartDate,
       plannedEndDate: sub.plannedEndDate ? new Date(sub.plannedEndDate) : parentStage.plannedEndDate,
       actualStartDate: sub.actualStartDate ? new Date(sub.actualStartDate) : undefined,
@@ -72,7 +74,7 @@ export async function GET(request: Request) {
     const status = searchParams.get("status");
     const developerId = searchParams.get("developer");
     const search = searchParams.get("search");
-    const overdueOnly = searchParams.get("overdue") === "true";
+    const sprint = searchParams.get("sprint");
 
     await dbConnect();
 
@@ -80,6 +82,14 @@ export async function GET(request: Request) {
     if (status && status !== "all") {
       query.status = status;
     }
+
+    if (sprint === "assigned") {
+      query.hasSprint = true;
+    } else if (sprint === "none") {
+      query.hasSprint = false;
+    }
+
+    const overdueOnly = searchParams.get("overdue") === "true";
 
     if (search) {
       query.$or = [
@@ -166,6 +176,7 @@ export async function POST(request: Request) {
       taskName,
       description,
       sprintUrl,
+      hasSprint,
       plannedStartDate,
       plannedEndDate,
       stageOrder,
@@ -234,7 +245,8 @@ export async function POST(request: Request) {
       storyNumber: storyNumber.trim(),
       taskName: taskName.trim(),
       description: description || "",
-      sprintUrl: sprintUrl?.trim() || "",
+      sprintUrl: hasSprint && sprintUrl ? sprintUrl.trim() : "",
+      hasSprint: Boolean(hasSprint),
       plannedStartDate: start,
       plannedEndDate: end,
       status: "not_started",
@@ -273,7 +285,9 @@ export async function POST(request: Request) {
       const stageNotes = customDetail?.notes?.trim() || "";
       const stageImplDesc = customDetail?.implementationDescription?.trim() || "";
       const stageAdoLink = customDetail?.adoStoryLink?.trim() || "";
-      const stageSprintId = customDetail?.sprintId?.trim() || "";
+      const stageSprintId = customDetail?.hasSprintId && customDetail?.sprintId
+        ? customDetail.sprintId.trim()
+        : "";
 
       const childStage = await StoryStage.create({
         storyId: story._id,
@@ -282,6 +296,7 @@ export async function POST(request: Request) {
         taskName: `#${storyNumber.trim()}-${stageName}`,
         description: stageDesc,
         sprintId: stageSprintId,
+        hasSprintId: Boolean(customDetail?.hasSprintId),
         plannedStartDate: stagePlannedStart,
         plannedEndDate: stagePlannedEnd,
         actualStartDate: stageActualStart,

@@ -39,6 +39,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -56,6 +57,7 @@ const storyEditSchema = z.object({
   taskName: z.string().min(2, { message: "Task/Story Name is required." }),
   description: z.string().optional(),
   sprintUrl: z.string().url({ message: "Must be a valid URL." }).or(z.literal("")),
+  hasSprint: z.boolean(),
   plannedStartDate: z.string().min(1, { message: "Planned Start Date is required." }),
   plannedEndDate: z.string().min(1, { message: "Planned End Date is required." }),
 });
@@ -102,6 +104,7 @@ interface UserStory {
   taskName: string;
   description?: string;
   sprintUrl?: string;
+  hasSprint?: boolean;
   plannedStartDate: string;
   plannedEndDate: string;
   actualStartDate?: string;
@@ -153,10 +156,14 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<StoryEditValues>({
     resolver: zodResolver(storyEditSchema),
   });
+
+  const editHasSprint = watch("hasSprint");
 
   const fetchStoryDetails = async () => {
     try {
@@ -210,6 +217,7 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
       taskName: story.taskName,
       description: story.description || "",
       sprintUrl: story.sprintUrl || "",
+      hasSprint: story.hasSprint ?? Boolean(story.sprintUrl),
       plannedStartDate: formatDateForInput(story.plannedStartDate),
       plannedEndDate: formatDateForInput(story.plannedEndDate),
     });
@@ -357,6 +365,7 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
     try {
       const payload = {
         ...values,
+        sprintUrl: values.hasSprint ? values.sprintUrl : "",
         userIds: selectedUserIds,
         stageOrder: selectedStagePlanIds,
       };
@@ -484,15 +493,17 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
               </p>
             </div>
             <div className="space-y-1">
-              <span className="text-muted-foreground font-semibold">Sprint URL:</span>
+              <span className="text-muted-foreground font-semibold">Sprint:</span>
               <p className="font-medium text-foreground mt-0.5">
-                {story.sprintUrl ? (
+                {story.hasSprint && story.sprintUrl ? (
                   <a href={story.sprintUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline inline-flex items-center gap-1 text-xs">
                     <ExternalLink className="h-3 w-3" />
                     Open Sprint
                   </a>
                 ) : (
-                  <span className="italic text-muted-foreground/60">Not set</span>
+                  <Badge variant="outline" className="text-[10px] font-semibold bg-amber-500/10 text-amber-700 border-amber-200">
+                    Backlog — No Sprint
+                  </Badge>
                 )}
               </p>
             </div>
@@ -610,17 +621,37 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
                   />
                 </div>
 
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label htmlFor="edit-sprintUrl">Sprint URL</Label>
-                  <Input
-                    id="edit-sprintUrl"
-                    type="url"
-                    placeholder="https://dev.azure.com/.../sprint/..."
-                    className="bg-card h-9 text-xs"
-                    {...register("sprintUrl")}
-                  />
-                  {errors.sprintUrl && (
-                    <p className="text-xs text-destructive font-medium">{errors.sprintUrl.message}</p>
+                <div className="space-y-3 sm:col-span-2 rounded-lg border border-border bg-muted/20 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="edit-hasSprint" className="text-sm font-semibold">Assigned to Sprint</Label>
+                      <p className="text-[11px] text-muted-foreground">
+                        Disable for tasks not yet assigned to a sprint.
+                      </p>
+                    </div>
+                    <Switch
+                      id="edit-hasSprint"
+                      checked={editHasSprint}
+                      onCheckedChange={(checked) => {
+                        setValue("hasSprint", checked);
+                        if (!checked) setValue("sprintUrl", "");
+                      }}
+                    />
+                  </div>
+                  {editHasSprint && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-sprintUrl">Sprint URL</Label>
+                      <Input
+                        id="edit-sprintUrl"
+                        type="url"
+                        placeholder="https://dev.azure.com/.../sprint/..."
+                        className="bg-card h-9 text-xs"
+                        {...register("sprintUrl")}
+                      />
+                      {errors.sprintUrl && (
+                        <p className="text-xs text-destructive font-medium">{errors.sprintUrl.message}</p>
+                      )}
+                    </div>
                   )}
                 </div>
 

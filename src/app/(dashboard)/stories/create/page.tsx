@@ -39,6 +39,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Accordion } from "@/components/ui/accordion";
@@ -53,6 +54,7 @@ const storyFormSchema = z.object({
   taskName: z.string().min(2, { message: "Task/Story Name is required." }),
   description: z.string().optional(),
   sprintUrl: z.string().url({ message: "Must be a valid URL." }).or(z.literal("")),
+  hasSprint: z.boolean(),
   plannedStartDate: z.string().min(1, { message: "Planned Start Date is required." }),
   plannedEndDate: z.string().min(1, { message: "Planned End Date is required." }),
 });
@@ -95,6 +97,7 @@ interface StageDetails {
   implementationDescription?: string;
   adoStoryLink?: string;
   sprintId?: string;
+  hasSprintId?: boolean;
   subTickets?: SubTicketDetails[];
 }
 
@@ -102,6 +105,7 @@ interface SubTicketDetails {
   tempId: string;
   taskName: string;
   sprintId?: string;
+  hasSprintId?: boolean;
   status?: "not_started" | "in_progress" | "blocked" | "completed" | "delayed";
   developBy?: string;
   subTickets?: SubTicketDetails[];
@@ -153,6 +157,7 @@ export default function CreateStoryPage() {
     register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<StoryFormValues>({
     resolver: zodResolver(storyFormSchema),
@@ -161,6 +166,7 @@ export default function CreateStoryPage() {
       taskName: "",
       description: "",
       sprintUrl: "",
+      hasSprint: false,
       plannedStartDate: "",
       plannedEndDate: "",
     },
@@ -170,6 +176,7 @@ export default function CreateStoryPage() {
   const parentStoryNumber = watch("storyNumber");
   const parentStartDate = watch("plannedStartDate");
   const parentEndDate = watch("plannedEndDate");
+  const hasSprint = watch("hasSprint");
 
   const fetchData = async () => {
     try {
@@ -319,6 +326,7 @@ export default function CreateStoryPage() {
         prevDetails.prStatus === details.prStatus &&
         prevDetails.githubPrLink === details.githubPrLink &&
         prevDetails.sprintId === details.sprintId &&
+        prevDetails.hasSprintId === details.hasSprintId &&
         prevDetails.plannedStartDate === details.plannedStartDate &&
         prevDetails.plannedEndDate === details.plannedEndDate &&
         prevDetails.actualStartDate === details.actualStartDate &&
@@ -503,7 +511,8 @@ export default function CreateStoryPage() {
         prStatus: details.prStatus || "none",
         notes: details.notes || "",
         adoStoryLink: details.adoStoryLink || "",
-        sprintId: details.sprintId || "",
+        sprintId: details.hasSprintId ? details.sprintId || "" : "",
+        hasSprintId: details.hasSprintId || false,
         subTickets: details.subTickets || [],
       };
     });
@@ -529,6 +538,7 @@ export default function CreateStoryPage() {
       setSubmitting(true);
       const payload = {
         ...values,
+        sprintUrl: values.hasSprint ? values.sprintUrl : "",
         stageOrder: selectedStagePlanIds,
         userIds: selectedUserIds,
         stagesDetails,
@@ -636,18 +646,43 @@ export default function CreateStoryPage() {
                     />
                   </div>
 
-                  {/* Sprint URL */}
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="sprintUrl" className="font-semibold text-xs">Sprint URL</Label>
-                    <Input
-                      id="sprintUrl"
-                      type="url"
-                      placeholder="https://dev.azure.com/.../sprint/..."
-                      className="bg-card h-9 text-xs"
-                      {...register("sprintUrl")}
-                    />
-                    {errors.sprintUrl && (
-                      <p className="text-[10px] text-destructive font-semibold">{errors.sprintUrl.message}</p>
+                  {/* Sprint assignment */}
+                  <div className="space-y-3 sm:col-span-2 rounded-lg border border-border bg-muted/20 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="hasSprint" className="font-semibold text-xs">Assigned to Sprint</Label>
+                        <p className="text-[10px] text-muted-foreground">
+                          Turn off for backlog tasks that are not tied to any sprint yet.
+                        </p>
+                      </div>
+                      <Switch
+                        id="hasSprint"
+                        checked={hasSprint}
+                        onCheckedChange={(checked) => {
+                          setValue("hasSprint", checked);
+                          if (!checked) setValue("sprintUrl", "");
+                        }}
+                      />
+                    </div>
+
+                    {hasSprint ? (
+                      <div className="space-y-1.5">
+                        <Label htmlFor="sprintUrl" className="font-semibold text-xs">Sprint URL</Label>
+                        <Input
+                          id="sprintUrl"
+                          type="url"
+                          placeholder="https://dev.azure.com/.../sprint/..."
+                          className="bg-card h-9 text-xs"
+                          {...register("sprintUrl")}
+                        />
+                        {errors.sprintUrl && (
+                          <p className="text-[10px] text-destructive font-semibold">{errors.sprintUrl.message}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] font-semibold bg-amber-500/10 text-amber-700 border-amber-200">
+                        Backlog — No Sprint Assigned
+                      </Badge>
                     )}
                   </div>
 
@@ -729,6 +764,7 @@ export default function CreateStoryPage() {
                         implementationDescription: details.implementationDescription || "",
                         adoStoryLink: details.adoStoryLink || "",
                         sprintId: details.sprintId || "",
+                        hasSprintId: details.hasSprintId || false,
                       };
 
                       return (

@@ -50,6 +50,8 @@ interface StoryItem {
   storyNumber: string;
   taskName: string;
   description?: string;
+  sprintUrl?: string;
+  hasSprint?: boolean;
   plannedStartDate: string;
   plannedEndDate: string;
   status: "not_started" | "in_progress" | "blocked" | "completed" | "delayed";
@@ -68,6 +70,7 @@ export default function StoriesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [selectedDeveloper, setSelectedDeveloper] = useState("all");
+  const [selectedSprintFilter, setSelectedSprintFilter] = useState("all");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<DeleteConfirmItem | null>(null);
 
@@ -163,7 +166,14 @@ export default function StoriesPage() {
       matchesDeveloper = isParentAssignee || isStageAssignee;
     }
 
-    return matchesSearch && matchesStatus && matchesDeveloper;
+    let matchesSprint = true;
+    if (selectedSprintFilter === "assigned") {
+      matchesSprint = Boolean(story.hasSprint);
+    } else if (selectedSprintFilter === "none") {
+      matchesSprint = !story.hasSprint;
+    }
+
+    return matchesSearch && matchesStatus && matchesDeveloper && matchesSprint;
   });
 
   return (
@@ -192,7 +202,7 @@ export default function StoriesPage() {
       {/* Search and Filters Bar */}
       <Card className="border-border shadow-sm bg-card">
         <CardContent className="p-4 space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {/* Search input */}
             <div className="relative lg:col-span-2">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -217,6 +227,19 @@ export default function StoriesPage() {
                     {u.name}
                   </option>
                 ))}
+              </select>
+            </div>
+
+            {/* Sprint Filter */}
+            <div>
+              <select
+                value={selectedSprintFilter}
+                onChange={(e) => setSelectedSprintFilter(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="all">All Sprint Types</option>
+                <option value="assigned">In Sprint</option>
+                <option value="none">No Sprint (Backlog)</option>
               </select>
             </div>
 
@@ -272,6 +295,7 @@ export default function StoriesPage() {
                   <tr className="border-b border-border bg-muted/40 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                     <th className="py-3.5 px-4 w-[110px]">Story No</th>
                     <th className="py-3.5 px-4">Task Name</th>
+                    <th className="py-3.5 px-4">Sprint</th>
                     <th className="py-3.5 px-4">Current Stage</th>
                     <th className="py-3.5 px-4">Active Developer</th>
                     <th className="py-3.5 px-4">Planned End</th>
@@ -303,6 +327,26 @@ export default function StoriesPage() {
                         </td>
                         <td className="py-3.5 px-4 font-semibold text-foreground text-xs max-w-[220px] truncate" title={story.taskName}>
                           {story.taskName}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          {story.hasSprint ? (
+                            story.sprintUrl ? (
+                              <a
+                                href={story.sprintUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[10px] font-semibold text-primary hover:underline"
+                              >
+                                In Sprint
+                              </a>
+                            ) : (
+                              <Badge className="text-[10px] bg-primary/10 text-primary border-none">In Sprint</Badge>
+                            )
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] font-semibold bg-amber-500/10 text-amber-700 border-amber-200">
+                              No Sprint
+                            </Badge>
+                          )}
                         </td>
                         <td className="py-3.5 px-4">
                           <StageBadge name={currentStageName} colorTag={currentStageColor} size="sm" />

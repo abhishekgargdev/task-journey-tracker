@@ -64,6 +64,7 @@ import {
 } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { formatDateForInput, serializeDateInput } from "@/lib/date-utils";
@@ -145,6 +146,7 @@ const stageEditSchema = z.object({
   implementationDescription: z.string().optional(),
   adoStoryLink: z.string().optional(),
   sprintId: z.string().optional(),
+  hasSprintId: z.boolean(),
 });
 
 type StageEditFormValues = z.infer<typeof stageEditSchema>;
@@ -775,11 +777,13 @@ export function ChildStoryAccordionItem({
   const [addingChild, setAddingChild] = useState(false);
   const [newChildName, setNewChildName] = useState("");
   const [newChildSprintId, setNewChildSprintId] = useState("");
+  const [newChildHasSprintId, setNewChildHasSprintId] = useState(false);
 
   const {
     register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<StageEditFormValues>({
     resolver: zodResolver(stageEditSchema),
@@ -798,10 +802,12 @@ export function ChildStoryAccordionItem({
       implementationDescription: storyStage.implementationDescription || "",
       adoStoryLink: storyStage.adoStoryLink || "",
       sprintId: storyStage.sprintId || "",
+      hasSprintId: storyStage.hasSprintId ?? Boolean(storyStage.sprintId),
     },
   });
 
   const formValues = watch();
+  const hasSprintId = watch("hasSprintId");
 
   useEffect(() => {
     if (mode === "create" && onChangeDetails) {
@@ -813,7 +819,8 @@ export function ChildStoryAccordionItem({
         githubRepo: formValues.githubRepo,
         prStatus: formValues.prStatus,
         githubPrLink: formValues.prLink,
-        sprintId: formValues.sprintId,
+        sprintId: formValues.hasSprintId ? formValues.sprintId : "",
+        hasSprintId: formValues.hasSprintId,
         plannedStartDate: formValues.plannedStartDate,
         plannedEndDate: formValues.plannedEndDate,
         actualStartDate: formValues.actualStartDate,
@@ -831,6 +838,7 @@ export function ChildStoryAccordionItem({
     formValues.prStatus,
     formValues.prLink,
     formValues.sprintId,
+    formValues.hasSprintId,
     formValues.plannedStartDate,
     formValues.plannedEndDate,
     formValues.actualStartDate,
@@ -856,7 +864,8 @@ export function ChildStoryAccordionItem({
         body: JSON.stringify({
           parentStoryStageId: storyStage._id,
           taskName: newChildName.trim(),
-          sprintId: newChildSprintId.trim(),
+          sprintId: newChildHasSprintId ? newChildSprintId.trim() : "",
+          hasSprintId: newChildHasSprintId,
         }),
       });
 
@@ -868,6 +877,7 @@ export function ChildStoryAccordionItem({
       toast.add({ title: "Sub-ticket added", description: `"${newChildName}" created successfully.`, type: "success" });
       setNewChildName("");
       setNewChildSprintId("");
+      setNewChildHasSprintId(false);
       onRefresh?.();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "An error occurred.";
@@ -912,7 +922,8 @@ export function ChildStoryAccordionItem({
         actualEndDate: serializeDateInput(values.actualEndDate),
         assignedTo: values.assignedTo || null,
         prLink: values.prLink || "",
-        sprintId: values.sprintId || "",
+        sprintId: values.hasSprintId ? values.sprintId || "" : "",
+        hasSprintId: values.hasSprintId,
       };
 
       const stageRefId = storyStage.stageId?._id || storyStage.stageId;
@@ -1055,14 +1066,31 @@ export function ChildStoryAccordionItem({
               />
             </div>
 
-            {/* Sprint ID */}
-            <div className="space-y-1.5">
-              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Sprint ID</Label>
-              <Input
-                placeholder="e.g. Sprint 24 / ADO-12345"
-                className="bg-card h-8.5 text-xs font-mono"
-                {...register("sprintId")}
-              />
+            {/* Sprint assignment */}
+            <div className="space-y-2 sm:col-span-2 md:col-span-3 rounded-lg border border-border bg-muted/30 p-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Has Sprint ID
+                </Label>
+                <Switch
+                  checked={hasSprintId}
+                  onCheckedChange={(checked) => {
+                    setValue("hasSprintId", checked);
+                    if (!checked) setValue("sprintId", "");
+                  }}
+                />
+              </div>
+              {hasSprintId ? (
+                <Input
+                  placeholder="e.g. Sprint 24 / ADO-12345"
+                  className="bg-card h-8.5 text-xs font-mono"
+                  {...register("sprintId")}
+                />
+              ) : (
+                <Badge variant="outline" className="text-[9px] font-semibold bg-amber-500/10 text-amber-700 border-amber-200">
+                  No Sprint ID — Backlog Item
+                </Badge>
+              )}
             </div>
 
             {/* Developer Dropdown restricted to Main Story users */}
@@ -1207,19 +1235,33 @@ export function ChildStoryAccordionItem({
             <div className="pt-4 mt-4 border-t border-border/60 space-y-3">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-bold text-foreground">Sub-tickets ({childStages.length})</Label>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Input
                     placeholder="Sub-ticket name"
                     value={newChildName}
                     onChange={(e) => setNewChildName(e.target.value)}
                     className="h-7 text-xs w-36"
                   />
-                  <Input
-                    placeholder="Sprint ID"
-                    value={newChildSprintId}
-                    onChange={(e) => setNewChildSprintId(e.target.value)}
-                    className="h-7 text-xs w-28 font-mono"
-                  />
+                  <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newChildHasSprintId}
+                      onChange={(e) => {
+                        setNewChildHasSprintId(e.target.checked);
+                        if (!e.target.checked) setNewChildSprintId("");
+                      }}
+                      className="h-3.5 w-3.5 rounded accent-primary"
+                    />
+                    Has Sprint ID
+                  </label>
+                  {newChildHasSprintId && (
+                    <Input
+                      placeholder="Sprint ID"
+                      value={newChildSprintId}
+                      onChange={(e) => setNewChildSprintId(e.target.value)}
+                      className="h-7 text-xs w-28 font-mono"
+                    />
+                  )}
                   <Button
                     type="button"
                     size="sm"

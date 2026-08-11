@@ -8,6 +8,7 @@ export interface IStoryStage extends Document {
   taskName: string;
   description?: string;
   sprintId?: string;
+  hasSprintId: boolean;
   plannedStartDate?: Date;
   plannedEndDate?: Date;
   actualStartDate?: Date;
@@ -35,6 +36,7 @@ const StoryStageSchema = new Schema<IStoryStage>(
     taskName: { type: String, required: true },
     description: { type: String },
     sprintId: { type: String },
+    hasSprintId: { type: Boolean, default: false },
     plannedStartDate: { type: Date },
     plannedEndDate: { type: Date },
     actualStartDate: { type: Date },

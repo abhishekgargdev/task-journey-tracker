@@ -102,6 +102,10 @@ export async function PATCH(
     if (body.taskName !== undefined) story.taskName = body.taskName.trim();
     if (body.description !== undefined) story.description = body.description;
     if (body.sprintUrl !== undefined) story.sprintUrl = body.sprintUrl?.trim() || "";
+    if (body.hasSprint !== undefined) {
+      story.hasSprint = Boolean(body.hasSprint);
+      if (!story.hasSprint) story.sprintUrl = "";
+    }
     if (body.actualStartDate !== undefined) story.actualStartDate = body.actualStartDate ? new Date(body.actualStartDate) : undefined;
     if (body.actualEndDate !== undefined) story.actualEndDate = body.actualEndDate ? new Date(body.actualEndDate) : undefined;
     if (body.status !== undefined) story.status = body.status;
