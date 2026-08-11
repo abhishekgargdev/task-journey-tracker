@@ -189,6 +189,209 @@ function buildStageInsight(stage: MonitorStage, isCurrent: boolean, now: Date): 
   };
 }
 
+export function getTopLevelStages(stages: MonitorStage[]): MonitorStage[] {
+  return stages
+    .filter((s) => !s.parentStoryStageId)
+    .sort((a, b) => a.stageOrder - b.stageOrder);
+}
+
+export interface StorySummary extends StoryInsights {
+  story: MonitorStory;
+}
+
+export function buildStorySummary(
+  story: MonitorStory,
+  stages: MonitorStage[],
+  now = new Date()
+): StorySummary {
+  return {
+    story,
+    ...computeStoryInsights(story, stages, now),
+  };
+}
+
+export interface DashboardMetrics {
+  totalStories: number;
+  inProgress: number;
+  completed: number;
+  blocked: number;
+  delayed: number;
+  notStarted: number;
+  dueToday: number;
+  dueThisWeek: number;
+  overdueStories: number;
+  upcoming: number;
+}
+
+export interface StageCatalogProgress {
+  stageId: string;
+  name: string;
+  colorTag: string;
+  total: number;
+  completed: number;
+  percentage: number;
+}
+
+export interface DeveloperWorkloadRow {
+  developerId: string;
+  developer: string;
+  assignedStories: number;
+  inProgress: number;
+  completed: number;
+  overdue: number;
+}
+
+function isSameCalendarDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+export function computeDashboardMetrics(
+  summaries: StorySummary[],
+  now = new Date()
+): DashboardMetrics {
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  const oneWeekLater = new Date(todayStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  let dueToday = 0;
+  let dueThisWeek = 0;
+  let overdueStories = 0;
+  let upcoming = 0;
+
+  const statusCounts = {
+    not_started: 0,
+    in_progress: 0,
+    completed: 0,
+    blocked: 0,
+  };
+
+  for (const summary of summaries) {
+    const { story } = summary;
+    const status = story.status as keyof typeof statusCounts;
+    if (status in statusCounts) {
+      statusCounts[status]++;
+    }
+
+    if (story.status === "completed") continue;
+
+    const hasDelayedStage = summary.delayed.length > 0;
+    const storyPlannedEnd = parseDate(story.plannedEndDate);
+    const storyOverdue = hasDelayedStage || (storyPlannedEnd !== null && storyPlannedEnd < todayStart);
+    if (storyOverdue) overdueStories++;
+
+    const storyDueToday =
+      (storyPlannedEnd && isSameCalendarDay(storyPlannedEnd, now)) ||
+      summary.stageInsights.some(
+        (i) =>
+          i.stage.status !== "completed" &&
+          i.stage.plannedEndDate &&
+          isSameCalendarDay(parseDate(i.stage.plannedEndDate)!, now)
+      );
+    if (storyDueToday) dueToday++;
+
+    const storyDueThisWeek =
+      (storyPlannedEnd && storyPlannedEnd > todayEnd && storyPlannedEnd <= oneWeekLater) ||
+      summary.stageInsights.some((i) => {
+        if (i.stage.status === "completed") return false;
+        const end = parseDate(i.stage.plannedEndDate);
+        return end !== null && end > todayEnd && end <= oneWeekLater;
+      });
+    if (storyDueThisWeek) dueThisWeek++;
+
+    if (summary.upcoming.length > 0) upcoming++;
+    else if (storyPlannedEnd && storyPlannedEnd > todayEnd) upcoming++;
+  }
+
+  const delayedStories = summaries.filter(
+    (s) => s.delayed.length > 0 && s.story.status !== "completed"
+  ).length;
+
+  return {
+    totalStories: summaries.length,
+    inProgress: statusCounts.in_progress,
+    completed: statusCounts.completed,
+    blocked: statusCounts.blocked,
+    delayed: delayedStories,
+    notStarted: statusCounts.not_started,
+    dueToday,
+    dueThisWeek,
+    overdueStories,
+    upcoming,
+  };
+}
+
+export function computeStageCatalogProgress(summaries: StorySummary[]): StageCatalogProgress[] {
+  const stageStatsMap = new Map<string, StageCatalogProgress>();
+
+  for (const summary of summaries) {
+    for (const insight of summary.stageInsights) {
+      const stageDef = insight.stage.stageId;
+      if (!stageDef?._id) continue;
+      const stageId = stageDef._id;
+      const existing = stageStatsMap.get(stageId) || {
+        stageId,
+        name: stageDef.name || insight.stageName,
+        colorTag: stageDef.colorTag || "slate",
+        total: 0,
+        completed: 0,
+        percentage: 0,
+      };
+      existing.total++;
+      if (insight.stage.status === "completed") existing.completed++;
+      existing.percentage =
+        existing.total > 0 ? Math.round((existing.completed / existing.total) * 100) : 0;
+      stageStatsMap.set(stageId, existing);
+    }
+  }
+
+  return Array.from(stageStatsMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function computeDeveloperWorkloads(
+  summaries: StorySummary[],
+  developers: Array<{ _id: string; name: string }>
+): DeveloperWorkloadRow[] {
+  return developers.map((dev) => {
+    const storyIds = new Set<string>();
+    let inProgress = 0;
+    let completed = 0;
+    let overdue = 0;
+
+    for (const summary of summaries) {
+      let devInStory = false;
+      for (const insight of summary.stageInsights) {
+        if (insight.stage.developBy?._id?.toString() !== dev._id.toString()) continue;
+        devInStory = true;
+        if (insight.stage.status === "in_progress" || insight.stage.status === "delayed") {
+          inProgress++;
+        }
+        if (insight.stage.status === "completed") completed++;
+        if (
+          insight.daysOverdue !== null &&
+          insight.daysOverdue > 0 &&
+          insight.stage.status !== "completed"
+        ) {
+          overdue++;
+        }
+      }
+      if (devInStory) storyIds.add(summary.story._id);
+    }
+
+    return {
+      developerId: dev._id,
+      developer: dev.name,
+      assignedStories: storyIds.size,
+      inProgress,
+      completed,
+      overdue,
+    };
+  });
+}
+
 export function computeStoryInsights(
   story: MonitorStory,
   stages: MonitorStage[],

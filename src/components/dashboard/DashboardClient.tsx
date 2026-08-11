@@ -1,20 +1,17 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Layers,
   Clock,
   AlertTriangle,
   CheckCircle2,
   Search,
-  ExternalLink,
-  Calendar,
   ArrowRight,
   GitBranch,
   GitPullRequest,
-  Check,
-  User as UserIcon,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -24,6 +21,14 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getStageColorConfig } from "@/lib/stage-colors";
+import type { StoryWithStages } from "@/lib/story-queries";
+import {
+  buildStorySummary,
+  computeDashboardMetrics,
+  computeDeveloperWorkloads,
+  computeStageCatalogProgress,
+  type StorySummary,
+} from "@/lib/story-monitoring";
 
 interface DbUser {
   _id: string;
@@ -32,179 +37,67 @@ interface DbUser {
   status: string;
 }
 
-interface StageDefinition {
-  _id: string;
-  name: string;
-  colorTag: string;
-}
-
-interface StoryStage {
-  _id: string;
-  storyId: string;
-  stageId: StageDefinition;
-  stageOrder: number;
-  taskName: string;
-  description?: string;
-  plannedStartDate?: string;
-  plannedEndDate?: string;
-  actualStartDate?: string;
-  actualEndDate?: string;
-  status: "not_started" | "in_progress" | "blocked" | "completed" | "delayed";
-  developBy?: DbUser;
-  githubPrLink?: string;
-  branchName?: string;
-  prStatus?: "none" | "pending" | "merged";
-}
-
-interface StoryItem {
-  _id: string;
-  storyNumber: string;
-  taskName: string;
-  description?: string;
-  plannedStartDate: string;
-  plannedEndDate: string;
-  actualStartDate?: string;
-  actualEndDate?: string;
-  status: "not_started" | "in_progress" | "blocked" | "completed" | "delayed";
-  stageOrder: StageDefinition[];
-  assignedUsers: DbUser[];
-  childStages: StoryStage[];
-}
-
 interface DashboardClientProps {
-  stories: StoryItem[];
-  storyStages: StoryStage[];
+  stories: StoryWithStages[];
   developers: DbUser[];
   userName: string;
 }
 
 export default function DashboardClient({
   stories,
-  storyStages,
   developers,
   userName,
 }: DashboardClientProps) {
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
   const [filterDeveloper, setFilterDeveloper] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
 
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-  const oneWeekLater = new Date(todayStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+  // Refetch server data when navigating back to dashboard
+  useEffect(() => {
+    router.refresh();
+  }, [router]);
 
-  // 1. Overall Metrics
-  const totalMainStories = stories.length;
-  const totalChildStories = storyStages.length;
-  
-  const statusCounts = {
-    not_started: stories.filter((s) => s.status === "not_started").length,
-    in_progress: stories.filter((s) => s.status === "in_progress").length,
-    completed: stories.filter((s) => s.status === "completed").length,
-    blocked: stories.filter((s) => s.status === "blocked").length,
-    delayed: stories.filter((s) => s.status === "delayed").length,
-  };
+  const summaries = useMemo(
+    () => stories.map((story) => buildStorySummary(story, story.childStages)),
+    [stories]
+  );
 
-  // 2. Date Tracking Metrics
-  let dueTodayCount = 0;
-  let dueThisWeekCount = 0;
-  let overdueCount = 0;
-  let upcomingCount = 0;
+  const metrics = useMemo(() => computeDashboardMetrics(summaries), [summaries]);
+  const stageProgressList = useMemo(() => computeStageCatalogProgress(summaries), [summaries]);
+  const developerWorkloads = useMemo(
+    () => computeDeveloperWorkloads(summaries, developers),
+    [summaries, developers]
+  );
 
-  stories.forEach((story) => {
-    if (story.status === "completed") return;
+  const summaryByStoryId = useMemo(() => {
+    const map = new Map<string, StorySummary>();
+    summaries.forEach((s) => map.set(s.story._id, s));
+    return map;
+  }, [summaries]);
 
-    const plannedEnd = new Date(story.plannedEndDate);
-
-    if (plannedEnd >= todayStart && plannedEnd <= todayEnd) {
-      dueTodayCount++;
-    }
-    if (plannedEnd > todayEnd && plannedEnd <= oneWeekLater) {
-      dueThisWeekCount++;
-    }
-    if (plannedEnd < todayStart) {
-      overdueCount++;
-    }
-    if (plannedEnd > todayEnd) {
-      upcomingCount++;
-    }
-  });
-
-  // 3. Stage-wise Progress Tracking
-  // Group child stages and compute completion %
-  const stageStatsMap = new Map<string, { name: string; colorTag: string; total: number; completed: number }>();
-  storyStages.forEach((cs) => {
-    if (!cs.stageId) return;
-    const stageId = cs.stageId._id;
-    const existing = stageStatsMap.get(stageId) || {
-      name: cs.stageId.name,
-      colorTag: cs.stageId.colorTag,
-      total: 0,
-      completed: 0,
-    };
-
-    existing.total++;
-    if (cs.status === "completed") {
-      existing.completed++;
-    }
-    stageStatsMap.set(stageId, existing);
-  });
-
-  const stageProgressList = Array.from(stageStatsMap.values()).map((stat) => ({
-    name: stat.name,
-    colorTag: stat.colorTag,
-    percentage: stat.total > 0 ? Math.round((stat.completed / stat.total) * 100) : 0,
-  }));
-
-  // 4. Developer Workloads
-  const developerWorkloads = developers.map((dev) => {
-    const assignedStoriesCount = stories.filter((s) =>
-      s.assignedUsers.some((u) => u._id === dev._id)
-    ).length;
-
-    const devStages = storyStages.filter((cs) => cs.developBy?._id === dev._id);
-
-    const inProgressStages = devStages.filter((s) => s.status === "in_progress" || s.status === "delayed").length;
-    const completedStages = devStages.filter((s) => s.status === "completed").length;
-    
-    const overdueStages = devStages.filter((s) => {
-      if (s.status === "completed") return false;
-      return s.plannedEndDate && new Date(s.plannedEndDate) < todayStart;
-    }).length;
-
-    return {
-      developer: dev.name,
-      assignedStories: assignedStoriesCount,
-      inProgress: inProgressStages,
-      completed: completedStages,
-      overdue: overdueStages,
-    };
-  });
-
-  // Client-side Filtering for Board List
   const filteredStories = stories.filter((story) => {
+    const summary = summaryByStoryId.get(story._id);
+    if (!summary) return false;
+
     const matchesSearch =
       story.storyNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
       story.taskName.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesStatus =
-      filterStatus === "all" || story.status === filterStatus;
+    const matchesStatus = filterStatus === "all" || story.status === filterStatus;
 
     let matchesDeveloper = true;
     if (filterDeveloper !== "all") {
       const isParentAssignee = story.assignedUsers.some((u) => u._id === filterDeveloper);
-      const isStageAssignee = story.childStages.some((cs) => cs.developBy?._id === filterDeveloper);
-      matchesDeveloper = isParentAssignee || isStageAssignee;
+      const isCurrentDev = summary.currentDeveloper?._id === filterDeveloper;
+      const isStageAssignee = summary.stageInsights.some(
+        (i) => i.stage.developBy?._id === filterDeveloper
+      );
+      matchesDeveloper = isParentAssignee || isCurrentDev || isStageAssignee;
     }
 
     return matchesSearch && matchesStatus && matchesDeveloper;
   });
-
-  const getStoryProgressPct = (story: StoryItem) => {
-    const total = story.childStages.length;
-    const completed = story.childStages.filter((cs) => cs.status === "completed").length;
-    return total > 0 ? Math.round((completed / total) * 100) : 0;
-  };
 
   return (
     <div className="space-y-6">
@@ -220,118 +113,59 @@ export default function DashboardClient({
 
       {/* KPI Cards Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Card className="shadow-sm border-border bg-card card-premium">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Stories</CardTitle>
-            <Layers className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-sans text-foreground">
-              {totalMainStories}
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-1">Total Parent Stories</p>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm border-border bg-card card-premium">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">In Progress</CardTitle>
-            <Clock className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-sans text-blue-600">
-              {statusCounts.in_progress}
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-1">Currently developing</p>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm border-border bg-card card-premium">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Blocked</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-rose-500 animate-bounce" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-sans text-rose-600">
-              {statusCounts.blocked}
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-1">Awaiting resolution</p>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm border-border bg-card card-premium">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Delayed</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-amber-500 animate-pulse" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-sans text-amber-600">
-              {statusCounts.delayed}
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-1">Timeline exceeded</p>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm border-border bg-card card-premium">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Completed</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-sans text-emerald-600">
-              {statusCounts.completed}
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-1">Stories successfully closed</p>
-          </CardContent>
-        </Card>
+        <MetricCard
+          title="Stories"
+          value={metrics.totalStories}
+          subtitle="Total Parent Stories"
+          icon={<Layers className="h-4 w-4 text-primary" />}
+          valueClassName="text-foreground"
+        />
+        <MetricCard
+          title="In Progress"
+          value={metrics.inProgress}
+          subtitle="Currently developing"
+          icon={<Clock className="h-4 w-4 text-blue-500" />}
+          valueClassName="text-blue-600"
+        />
+        <MetricCard
+          title="Blocked"
+          value={metrics.blocked}
+          subtitle="Awaiting resolution"
+          icon={<AlertTriangle className="h-4 w-4 text-rose-500 animate-bounce" />}
+          valueClassName="text-rose-600"
+        />
+        <MetricCard
+          title="Delayed"
+          value={metrics.delayed}
+          subtitle="Stories with overdue stages"
+          icon={<AlertTriangle className="h-4 w-4 text-amber-500 animate-pulse" />}
+          valueClassName="text-amber-600"
+        />
+        <MetricCard
+          title="Completed"
+          value={metrics.completed}
+          subtitle="Stories successfully closed"
+          icon={<CheckCircle2 className="h-4 w-4 text-emerald-500" />}
+          valueClassName="text-emerald-600"
+        />
       </div>
 
       {/* Date Tracking Section */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className="border border-border bg-card shadow-sm text-center card-premium">
-          <CardHeader className="pb-1.5 pt-4">
-            <CardTitle className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground">Due Today</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-2xl font-bold text-foreground">{dueTodayCount}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-border bg-card shadow-sm text-center card-premium">
-          <CardHeader className="pb-1.5 pt-4">
-            <CardTitle className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground">Due This Week</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-2xl font-bold text-foreground">{dueThisWeekCount}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-border bg-card shadow-sm text-center border-rose-100 bg-rose-50/5 card-premium">
-          <CardHeader className="pb-1.5 pt-4">
-            <CardTitle className="text-[9px] uppercase tracking-wider font-bold text-rose-600">Overdue Stories</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-2xl font-bold text-rose-600">{overdueCount}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-border bg-card shadow-sm text-center card-premium">
-          <CardHeader className="pb-1.5 pt-4">
-            <CardTitle className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground">Upcoming Work</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-2xl font-bold text-foreground">{upcomingCount}</div>
-          </CardContent>
-        </Card>
+        <DateCard title="Due Today" value={metrics.dueToday} />
+        <DateCard title="Due This Week" value={metrics.dueThisWeek} />
+        <DateCard title="Overdue Stories" value={metrics.overdueStories} accent="rose" />
+        <DateCard title="Upcoming Work" value={metrics.upcoming} />
       </div>
 
       {/* Middle Grid: Stage Tracking & Developer Workloads */}
       <div className="grid gap-6 md:grid-cols-2">
-        {/* Stage-wise Progress */}
         <Card className="border border-border shadow-sm">
           <CardHeader>
             <CardTitle className="text-sm font-bold">Stage-wise Progress</CardTitle>
-            <CardDescription className="text-xs">Completion percentages computed across all active stages in child stories.</CardDescription>
+            <CardDescription className="text-xs">
+              Completion across top-level pipeline stages (same data as Story Details).
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {stageProgressList.length === 0 ? (
@@ -340,7 +174,7 @@ export default function DashboardClient({
               stageProgressList.map((stat) => {
                 const colors = getStageColorConfig(stat.colorTag);
                 return (
-                  <div key={stat.name} className="space-y-1.5">
+                  <div key={stat.stageId} className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs font-semibold text-foreground">
                       <span className="flex items-center gap-1.5">
                         <span className={cn("h-2.5 w-2.5 rounded-full", colors.dot)} />
@@ -361,11 +195,12 @@ export default function DashboardClient({
           </CardContent>
         </Card>
 
-        {/* Developer Workload */}
         <Card className="border border-border shadow-sm overflow-hidden">
           <CardHeader>
             <CardTitle className="text-sm font-bold">Developer Workload Directory</CardTitle>
-            <CardDescription className="text-xs">Story assignment and active child stages workloads.</CardDescription>
+            <CardDescription className="text-xs">
+              Workloads from top-level child stage assignments.
+            </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -381,20 +216,24 @@ export default function DashboardClient({
                 </thead>
                 <tbody className="divide-y divide-border">
                   {developerWorkloads.map((wl) => (
-                    <tr key={wl.developer} className="hover:bg-accent/20 transition-colors">
+                    <tr key={wl.developerId} className="hover:bg-accent/20 transition-colors">
                       <td className="py-2.5 px-4 font-semibold text-foreground flex items-center gap-2">
                         <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary text-[9px] font-bold">
-                          {wl.developer.split(" ").map(n => n[0]).join("")}
+                          {wl.developer.split(" ").map((n) => n[0]).join("")}
                         </div>
                         {wl.developer}
                       </td>
                       <td className="py-2.5 px-4 text-center text-foreground font-semibold">{wl.assignedStories}</td>
                       <td className="py-2.5 px-4 text-center text-blue-600 font-semibold">{wl.inProgress}</td>
                       <td className="py-2.5 px-4 text-center text-emerald-600 font-semibold">{wl.completed}</td>
-                      <td className={cn(
-                        "py-2.5 px-4 text-center font-bold",
-                        wl.overdue > 0 ? "text-rose-600 bg-rose-50/10" : "text-muted-foreground/60"
-                      )}>{wl.overdue}</td>
+                      <td
+                        className={cn(
+                          "py-2.5 px-4 text-center font-bold",
+                          wl.overdue > 0 ? "text-rose-600 bg-rose-50/10" : "text-muted-foreground/60"
+                        )}
+                      >
+                        {wl.overdue}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -409,11 +248,12 @@ export default function DashboardClient({
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="space-y-0.5">
             <h3 className="text-sm font-bold text-foreground uppercase tracking-wider">Stories Pipeline Board</h3>
-            <p className="text-xs text-muted-foreground">Verify pipeline sequence stages, branches, and code pull requests.</p>
+            <p className="text-xs text-muted-foreground">
+              Same current stage, developer, and progress as each Story Details page.
+            </p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap shrink-0">
-            {/* Search */}
             <div className="relative w-full sm:w-[220px]">
               <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
               <Input
@@ -424,7 +264,6 @@ export default function DashboardClient({
               />
             </div>
 
-            {/* Developer Filter */}
             <select
               value={filterDeveloper}
               onChange={(e) => setFilterDeveloper(e.target.value)}
@@ -438,7 +277,6 @@ export default function DashboardClient({
               ))}
             </select>
 
-            {/* Status Filter */}
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
@@ -477,11 +315,11 @@ export default function DashboardClient({
                 </thead>
                 <tbody className="divide-y divide-border">
                   {filteredStories.map((story) => {
-                    const progressPct = getStoryProgressPct(story);
-                    const activeStage = story.childStages.find((cs) => cs.status !== "completed");
-                    const activeStageName = activeStage?.stageId?.name || (story.status === "completed" ? "Go Live / Completed" : "Completed");
-                    const activeStageColor = activeStage?.stageId?.colorTag || "emerald";
-                    const activeStageDev = activeStage?.developBy?.name || "Unassigned";
+                    const summary = summaryByStoryId.get(story._id)!;
+                    const progressPct = summary.progressPct;
+                    const currentStage = summary.currentStage;
+                    const activeStageName = summary.currentStageName;
+                    const activeStageDev = summary.currentDeveloper?.name || "Unassigned";
 
                     return (
                       <tr key={story._id} className="hover:bg-accent/40 transition-colors">
@@ -490,7 +328,10 @@ export default function DashboardClient({
                             #{story.storyNumber}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 font-semibold text-foreground text-xs max-w-[200px] truncate" title={story.taskName}>
+                        <td
+                          className="py-3.5 px-4 font-semibold text-foreground text-xs max-w-[200px] truncate"
+                          title={story.taskName}
+                        >
                           {story.taskName}
                         </td>
                         <td className="py-3.5 px-4 font-medium">
@@ -499,15 +340,17 @@ export default function DashboardClient({
                               {activeStageName}
                             </Badge>
                             <div>
-                              <Badge className={cn(
-                                "border-none text-[8px] font-bold px-1.5 py-0.2",
-                                story.status === "completed" && "bg-emerald-500/10 text-emerald-600",
-                                story.status === "in_progress" && "bg-blue-500/10 text-blue-600 animate-pulse",
-                                story.status === "blocked" && "bg-rose-500/10 text-rose-600 animate-bounce",
-                                story.status === "delayed" && "bg-amber-500/10 text-amber-600",
-                                story.status === "not_started" && "bg-muted text-muted-foreground"
-                              )}>
-                                {story.status.toUpperCase().replace("_", " ")}
+                              <Badge
+                                className={cn(
+                                  "border-none text-[8px] font-bold px-1.5 py-0.2 capitalize",
+                                  story.status === "completed" && "bg-emerald-500/10 text-emerald-600",
+                                  story.status === "in_progress" && "bg-blue-500/10 text-blue-600 animate-pulse",
+                                  story.status === "blocked" && "bg-rose-500/10 text-rose-600 animate-bounce",
+                                  story.status === "delayed" && "bg-amber-500/10 text-amber-600",
+                                  story.status === "not_started" && "bg-muted text-muted-foreground"
+                                )}
+                              >
+                                {story.status.replace(/_/g, " ")}
                               </Badge>
                             </div>
                           </div>
@@ -515,26 +358,27 @@ export default function DashboardClient({
                         <td className="py-3.5 px-4 text-muted-foreground font-semibold">
                           <div className="flex items-center gap-2">
                             <div className="h-5.5 w-5.5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[9px] font-bold">
-                              {activeStageDev.split(" ").map(n=>n[0]).join("")}
+                              {activeStageDev
+                                .split(" ")
+                                .map((n) => n[0])
+                                .join("")}
                             </div>
-                            <span className="text-xs text-foreground font-semibold">
-                              {activeStageDev}
-                            </span>
+                            <span className="text-xs text-foreground font-semibold">{activeStageDev}</span>
                           </div>
                         </td>
                         <td className="py-3.5 px-4 text-muted-foreground">
-                          {activeStage && (activeStage.branchName || activeStage.githubPrLink) ? (
+                          {currentStage && (currentStage.branchName || currentStage.githubPrLink) ? (
                             <div className="space-y-1">
-                              {activeStage.branchName && (
+                              {currentStage.branchName && (
                                 <p className="font-mono text-[9px] text-foreground font-semibold inline-flex items-center gap-1">
                                   <GitBranch className="h-3 w-3 text-muted-foreground" />
-                                  {activeStage.branchName}
+                                  {currentStage.branchName}
                                 </p>
                               )}
-                              {activeStage.githubPrLink && (
+                              {currentStage.githubPrLink && (
                                 <div>
                                   <a
-                                    href={activeStage.githubPrLink}
+                                    href={currentStage.githubPrLink}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="text-primary hover:underline text-[9px] inline-flex items-center gap-0.5"
@@ -552,13 +396,17 @@ export default function DashboardClient({
                         <td className="py-3.5 px-4">
                           <div className="space-y-1 text-center">
                             <span className="text-[10px] font-semibold text-foreground">
-                              {progressPct}% Completed
+                              {summary.counts.completed}/{summary.counts.total} ({progressPct}%)
                             </span>
                             <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
                               <div
                                 className={cn(
                                   "h-full transition-all duration-500",
-                                  story.status === "completed" ? "bg-emerald-500" : story.status === "blocked" ? "bg-rose-500" : "bg-primary"
+                                  story.status === "completed"
+                                    ? "bg-emerald-500"
+                                    : story.status === "blocked"
+                                      ? "bg-rose-500"
+                                      : "bg-primary"
                                 )}
                                 style={{ width: `${progressPct}%` }}
                               />
@@ -566,7 +414,12 @@ export default function DashboardClient({
                           </div>
                         </td>
                         <td className="py-3.5 px-4 text-right">
-                          <Button variant="outline" size="sm" className="h-7 text-[10px] cursor-pointer" render={<Link href={`/stories/${story._id}`} />}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-[10px] cursor-pointer"
+                            render={<Link href={`/stories/${story._id}`} />}
+                          >
                             Track Journey
                             <ArrowRight className="h-3 w-3 ml-1" />
                           </Button>
@@ -581,5 +434,67 @@ export default function DashboardClient({
         )}
       </div>
     </div>
+  );
+}
+
+function MetricCard({
+  title,
+  value,
+  subtitle,
+  icon,
+  valueClassName,
+}: {
+  title: string;
+  value: number;
+  subtitle: string;
+  icon: React.ReactNode;
+  valueClassName?: string;
+}) {
+  return (
+    <Card className="shadow-sm border-border bg-card card-premium">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{title}</CardTitle>
+        {icon}
+      </CardHeader>
+      <CardContent>
+        <div className={cn("text-2xl font-bold font-sans", valueClassName)}>{value}</div>
+        <p className="text-[10px] text-muted-foreground mt-1">{subtitle}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DateCard({
+  title,
+  value,
+  accent,
+}: {
+  title: string;
+  value: number;
+  accent?: "rose";
+}) {
+  return (
+    <Card
+      className={cn(
+        "border border-border bg-card shadow-sm text-center card-premium",
+        accent === "rose" && "border-rose-100 bg-rose-50/5"
+      )}
+    >
+      <CardHeader className="pb-1.5 pt-4">
+        <CardTitle
+          className={cn(
+            "text-[9px] uppercase tracking-wider font-bold",
+            accent === "rose" ? "text-rose-600" : "text-muted-foreground"
+          )}
+        >
+          {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pb-4">
+        <div className={cn("text-2xl font-bold", accent === "rose" ? "text-rose-600" : "text-foreground")}>
+          {value}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

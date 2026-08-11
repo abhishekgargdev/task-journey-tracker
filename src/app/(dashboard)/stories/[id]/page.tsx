@@ -44,7 +44,7 @@ import DeleteConfirmDialog, { DeleteConfirmItem } from "@/components/shared/Dele
 import { cn } from "@/lib/utils";
 import { getStageColorConfig } from "@/lib/stage-colors";
 import { formatDateForInput, serializeDateInput } from "@/lib/date-utils";
-import { computeStoryInsights } from "@/lib/story-monitoring";
+import { buildStorySummary } from "@/lib/story-monitoring";
 
 // Validation schema for editing Parent Story
 const storyEditSchema = z.object({
@@ -210,7 +210,7 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
 
   const insights = useMemo(() => {
     if (!story) return null;
-    return computeStoryInsights(story, story.childStages);
+    return buildStorySummary(story, story.childStages);
   }, [story]);
 
   const openEditDialog = () => {
