@@ -14,7 +14,9 @@ export async function GET() {
     await dbConnect();
     const user = await User.findById(session.userId, "name email");
     if (!user) {
-      return NextResponse.json({ error: "User not found." }, { status: 404 });
+      const response = NextResponse.json({ error: "User not found." }, { status: 401 });
+      response.cookies.delete("tjt_session");
+      return response;
     }
 
     return NextResponse.json(user);

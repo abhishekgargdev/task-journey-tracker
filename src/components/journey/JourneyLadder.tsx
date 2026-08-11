@@ -143,7 +143,7 @@ const stageEditSchema = z.object({
 type StageEditFormValues = z.infer<typeof stageEditSchema>;
 
 export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadderProps) {
-  const [expandedItem, setExpandedItem] = useState<any>(undefined);
+  const [expandedItem, setExpandedItem] = useState<any[]>([]);
 
   // Dialog Controls
   const [holdOpen, setHoldOpen] = useState(false);
@@ -164,7 +164,7 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
   );
 
   const handleNodeClick = (storyStage: StoryStage) => {
-    setExpandedItem(storyStage._id);
+    setExpandedItem([storyStage._id]);
     const accordionEl = document.getElementById(`accordion-item-${storyStage._id}`);
     if (accordionEl) {
       accordionEl.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -705,28 +705,34 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
 }
 
 // Collapsible Inline Form Accordion Item for Child Stories
-interface ChildStoryAccordionItemProps {
-  storyStage: StoryStage;
+export interface ChildStoryAccordionItemProps {
+  storyStage: any;
   stageName: string;
   colorTag: string;
   storyId: string;
-  users: UserItem[];
-  onRefresh: () => void;
+  users: any[];
+  onRefresh?: () => void;
+  mode?: "edit" | "create";
+  onChangeDetails?: (stageId: string, details: any) => void;
 }
 
-function ChildStoryAccordionItem({
+export function ChildStoryAccordionItem({
   storyStage,
   stageName,
   colorTag,
   storyId,
   users,
   onRefresh,
+  mode = "edit",
+  onChangeDetails,
 }: ChildStoryAccordionItemProps) {
   const [copied, setCopied] = useState(false);
 
   const {
     register,
     handleSubmit,
+    setValue,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<StageEditFormValues>({
     resolver: zodResolver(stageEditSchema),
@@ -746,6 +752,56 @@ function ChildStoryAccordionItem({
       adoStoryLink: storyStage.adoStoryLink || "",
     },
   });
+
+  const formValues = watch();
+
+  useEffect(() => {
+    if (mode === "create" && onChangeDetails) {
+      onChangeDetails(storyStage._id, {
+        adoStoryLink: formValues.adoStoryLink,
+        developBy: formValues.assignedTo || null,
+        status: formValues.status,
+        branchName: formValues.branchName,
+        githubRepo: formValues.githubRepo,
+        prStatus: formValues.prStatus,
+        githubPrLink: formValues.prLink,
+        plannedStartDate: formValues.plannedStartDate,
+        plannedEndDate: formValues.plannedEndDate,
+        actualStartDate: formValues.actualStartDate,
+        actualEndDate: formValues.actualEndDate,
+        implementationDescription: formValues.implementationDescription,
+        notes: formValues.notes,
+      });
+    }
+  }, [
+    formValues.adoStoryLink,
+    formValues.assignedTo,
+    formValues.status,
+    formValues.branchName,
+    formValues.githubRepo,
+    formValues.prStatus,
+    formValues.prLink,
+    formValues.plannedStartDate,
+    formValues.plannedEndDate,
+    formValues.actualStartDate,
+    formValues.actualEndDate,
+    formValues.implementationDescription,
+    formValues.notes,
+    mode,
+    onChangeDetails,
+    storyStage._id,
+  ]);
+
+  useEffect(() => {
+    if (mode === "create") {
+      if (storyStage.plannedStartDate) {
+        setValue("plannedStartDate", new Date(storyStage.plannedStartDate).toISOString().split("T")[0]);
+      }
+      if (storyStage.plannedEndDate) {
+        setValue("plannedEndDate", new Date(storyStage.plannedEndDate).toISOString().split("T")[0]);
+      }
+    }
+  }, [storyStage.plannedStartDate, storyStage.plannedEndDate, mode, setValue]);
 
   const onSubmit = async (values: StageEditFormValues) => {
     // Dates validation
@@ -786,7 +842,7 @@ function ChildStoryAccordionItem({
         type: "success",
       });
 
-      onRefresh();
+      onRefresh?.();
     } catch (err: any) {
       console.error(err);
       toast.add({
@@ -1020,21 +1076,23 @@ function ChildStoryAccordionItem({
             </div>
           </div>
 
-          <div className="flex justify-end pt-2">
-            <Button type="submit" disabled={isSubmitting} size="sm" className="cursor-pointer text-xs">
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="mr-1.5 h-4 w-4" />
-                  Save Stage Story
-                </>
-              )}
-            </Button>
-          </div>
+          {mode === "edit" && (
+            <div className="flex justify-end pt-2">
+              <Button type="submit" disabled={isSubmitting} size="sm" className="cursor-pointer text-xs">
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-1.5 h-4 w-4" />
+                    Save Stage Story
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
         </form>
       </AccordionContent>
     </AccordionItem>

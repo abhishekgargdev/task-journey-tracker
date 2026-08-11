@@ -13,7 +13,7 @@ export async function GET() {
     }
 
     await dbConnect();
-    const users = await User.find({}, "name email createdAt").sort({ name: 1 });
+    const users = await User.find({}, "name email status createdAt").sort({ name: 1 });
     return NextResponse.json(users);
   } catch (error) {
     console.error("GET users error:", error);

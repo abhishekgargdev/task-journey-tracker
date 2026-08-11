@@ -164,3 +164,32 @@
     }
   }
 }
+
+/* Premium Styling Enhancements */
+.card-premium {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-premium:hover {
+  box-shadow: 0 12px 24px -10px oklch(0.43 0.18 260 / 0.08);
+  transform: translateY(-1px);
+}
+
+/* Custom premium scrollbar for lists */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(0.85 0.01 260);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.7 0.01 260);
+}

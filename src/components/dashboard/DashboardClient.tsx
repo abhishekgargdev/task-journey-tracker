@@ -220,7 +220,7 @@ export default function DashboardClient({
 
       {/* KPI Cards Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Card className="shadow-sm border-border bg-card">
+        <Card className="shadow-sm border-border bg-card card-premium">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Stories</CardTitle>
             <Layers className="h-4 w-4 text-primary" />
@@ -233,7 +233,7 @@ export default function DashboardClient({
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm border-border bg-card">
+        <Card className="shadow-sm border-border bg-card card-premium">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">In Progress</CardTitle>
             <Clock className="h-4 w-4 text-blue-500" />
@@ -246,7 +246,7 @@ export default function DashboardClient({
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm border-border bg-card">
+        <Card className="shadow-sm border-border bg-card card-premium">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Blocked</CardTitle>
             <AlertTriangle className="h-4 w-4 text-rose-500 animate-bounce" />
@@ -259,7 +259,7 @@ export default function DashboardClient({
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm border-border bg-card">
+        <Card className="shadow-sm border-border bg-card card-premium">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Delayed</CardTitle>
             <AlertTriangle className="h-4 w-4 text-amber-500 animate-pulse" />
@@ -272,7 +272,7 @@ export default function DashboardClient({
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm border-border bg-card">
+        <Card className="shadow-sm border-border bg-card card-premium">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Completed</CardTitle>
             <CheckCircle2 className="h-4 w-4 text-emerald-500" />
@@ -288,7 +288,7 @@ export default function DashboardClient({
 
       {/* Date Tracking Section */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className="border border-border bg-card shadow-sm text-center">
+        <Card className="border border-border bg-card shadow-sm text-center card-premium">
           <CardHeader className="pb-1.5 pt-4">
             <CardTitle className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground">Due Today</CardTitle>
           </CardHeader>
@@ -297,7 +297,7 @@ export default function DashboardClient({
           </CardContent>
         </Card>
 
-        <Card className="border border-border bg-card shadow-sm text-center">
+        <Card className="border border-border bg-card shadow-sm text-center card-premium">
           <CardHeader className="pb-1.5 pt-4">
             <CardTitle className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground">Due This Week</CardTitle>
           </CardHeader>
@@ -306,7 +306,7 @@ export default function DashboardClient({
           </CardContent>
         </Card>
 
-        <Card className="border border-border bg-card shadow-sm text-center border-rose-100 bg-rose-50/5">
+        <Card className="border border-border bg-card shadow-sm text-center border-rose-100 bg-rose-50/5 card-premium">
           <CardHeader className="pb-1.5 pt-4">
             <CardTitle className="text-[9px] uppercase tracking-wider font-bold text-rose-600">Overdue Stories</CardTitle>
           </CardHeader>
@@ -315,7 +315,7 @@ export default function DashboardClient({
           </CardContent>
         </Card>
 
-        <Card className="border border-border bg-card shadow-sm text-center">
+        <Card className="border border-border bg-card shadow-sm text-center card-premium">
           <CardHeader className="pb-1.5 pt-4">
             <CardTitle className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground">Upcoming Work</CardTitle>
           </CardHeader>

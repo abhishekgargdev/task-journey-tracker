@@ -105,7 +105,7 @@ export default function LoginPage() {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="abhishekgargdev959@gmail.com"
+                  placeholder="Enter your email"
                   disabled={isLoading}
                   className="bg-card"
                   {...register("email")}

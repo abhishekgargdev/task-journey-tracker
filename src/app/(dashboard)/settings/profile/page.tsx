@@ -54,6 +54,10 @@ export default function ProfileSettingsPage() {
         // Wait, let's create a GET handler in /api/users/profile to return the current logged-in user's details! That is extremely clean.
         // Let's fetch it:
         const res = await fetch("/api/users/profile");
+        if (res.status === 401) {
+          router.push("/login");
+          return;
+        }
         if (!res.ok) throw new Error("Failed to load profile.");
         const data = await res.json();
         setValue("name", data.name);

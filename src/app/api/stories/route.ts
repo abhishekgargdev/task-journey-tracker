@@ -114,6 +114,7 @@ export async function POST(request: Request) {
       plannedEndDate,
       stageOrder,
       userIds,
+      stagesDetails, // Array of stage details: { stageId, plannedStartDate, plannedEndDate, developBy, description, branchName, githubRepo }
     } = await request.json();
 
     // Validation
@@ -149,6 +150,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `Story #${storyNumber} already exists.` }, { status: 400 });
     }
 
+    // Validate that custom stage developers are members of the parent story
+    if (stagesDetails && Array.isArray(stagesDetails)) {
+      const userIdsSet = new Set(userIds);
+      for (const detail of stagesDetails) {
+        if (detail.developBy && !userIdsSet.has(detail.developBy)) {
+          return NextResponse.json(
+            { error: "Cannot assign a developer to a stage who is not selected as a story member." },
+            { status: 400 }
+          );
+        }
+        if (detail.plannedStartDate && detail.plannedEndDate) {
+          const sDate = new Date(detail.plannedStartDate);
+          const eDate = new Date(detail.plannedEndDate);
+          if (eDate < sDate) {
+            return NextResponse.json(
+              { error: "Child stage planned end date cannot be before planned start date." },
+              { status: 400 }
+            );
+          }
+        }
+      }
+    }
+
     // Create Main Story
     const story = await Story.create({
       storyNumber: storyNumber.trim(),
@@ -169,22 +193,74 @@ export async function POST(request: Request) {
     }
 
     // Auto-create Child Stories (StoryStage) for each selected stage
+    const createdStages = [];
     for (let index = 0; index < stageOrder.length; index++) {
       const stageId = stageOrder[index];
       const stageDef = await StageDefinition.findById(stageId);
       const stageName = stageDef ? stageDef.name : "Stage";
 
-      await StoryStage.create({
+      // Match custom stage details if provided
+      const customDetail = stagesDetails?.find((d: any) => d.stageId === stageId.toString());
+
+      const stagePlannedStart = customDetail?.plannedStartDate ? new Date(customDetail.plannedStartDate) : start;
+      const stagePlannedEnd = customDetail?.plannedEndDate ? new Date(customDetail.plannedEndDate) : end;
+      const stageActualStart = customDetail?.actualStartDate ? new Date(customDetail.actualStartDate) : undefined;
+      const stageActualEnd = customDetail?.actualEndDate ? new Date(customDetail.actualEndDate) : undefined;
+      const stageDev = customDetail?.developBy || undefined;
+      const stageDesc = customDetail?.description?.trim() || `Deliverable stage for ${stageName}`;
+      const stageBranch = customDetail?.branchName?.trim() || "";
+      const stageRepo = customDetail?.githubRepo?.trim() || "";
+      const stageStatus = customDetail?.status || "not_started";
+      const stagePrStatus = customDetail?.prStatus || "none";
+      const stagePrLink = customDetail?.githubPrLink?.trim() || "";
+      const stageNotes = customDetail?.notes?.trim() || "";
+      const stageImplDesc = customDetail?.implementationDescription?.trim() || "";
+      const stageAdoLink = customDetail?.adoStoryLink?.trim() || "";
+
+      const childStage = await StoryStage.create({
         storyId: story._id,
         stageId: stageId,
         stageOrder: index + 1,
         taskName: `#${storyNumber.trim()}-${stageName}`,
-        description: `Deliverable stage for ${stageName}`,
-        plannedStartDate: start, // Default to parent dates initially
-        plannedEndDate: end,
-        status: "not_started",
+        description: stageDesc,
+        plannedStartDate: stagePlannedStart,
+        plannedEndDate: stagePlannedEnd,
+        actualStartDate: stageActualStart,
+        actualEndDate: stageActualEnd,
+        developBy: stageDev,
+        branchName: stageBranch,
+        githubRepo: stageRepo,
+        status: stageStatus,
+        prStatus: stagePrStatus,
+        githubPrLink: stagePrLink,
+        notes: stageNotes,
+        implementationDescription: stageImplDesc,
+        adoStoryLink: stageAdoLink,
       });
+
+      createdStages.push(childStage);
     }
+
+    // Synchronize parent overall status based on child statuses
+    const statuses = createdStages.map((cs) => cs.status);
+    let computedStatus: "not_started" | "in_progress" | "blocked" | "completed" | "delayed" = "not_started";
+
+    if (statuses.length > 0) {
+      if (statuses.every((s) => s === "completed")) {
+        computedStatus = "completed";
+      } else if (statuses.includes("blocked")) {
+        computedStatus = "blocked";
+      } else if (statuses.includes("delayed")) {
+        computedStatus = "delayed";
+      } else if (statuses.every((s) => s === "not_started")) {
+        computedStatus = "not_started";
+      } else {
+        computedStatus = "in_progress";
+      }
+    }
+
+    story.status = computedStatus;
+    await story.save();
 
     return NextResponse.json(story, { status: 201 });
   } catch (error: any) {
