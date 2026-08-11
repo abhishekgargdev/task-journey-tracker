@@ -32,6 +32,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import EmptyState from "@/components/shared/EmptyState";
+import DeleteConfirmDialog, { DeleteConfirmItem } from "@/components/shared/DeleteConfirmDialog";
 import { STAGE_COLORS } from "@/lib/stage-colors";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -77,10 +78,12 @@ export default function StagesSettingsPage() {
   // Dialog Controls
   const [formOpen, setFormOpen] = useState(false);
   const [deactivateOpen, setDeactivateOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [errorOpen, setErrorOpen] = useState(false);
   
   const [editingStage, setEditingStage] = useState<Stage | null>(null);
   const [pendingDeactivateStage, setPendingDeactivateStage] = useState<Stage | null>(null);
+  const [pendingDeleteStage, setPendingDeleteStage] = useState<DeleteConfirmItem | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -205,27 +208,27 @@ export default function StagesSettingsPage() {
     }
   };
 
-  const handleDeleteStage = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this stage permanently?")) return;
+  const openDeleteDialog = (stage: Stage) => {
+    setPendingDeleteStage({
+      id: stage._id,
+      name: stage.name,
+      subtitle: `Slug: ${stage.key}`,
+    });
+    setDeleteOpen(true);
+  };
 
-    try {
-      const res = await fetch(`/api/stages/${id}`, {
-        method: "DELETE",
-      });
+  const confirmDeleteStage = async (id: string) => {
+    const res = await fetch(`/api/stages/${id}`, { method: "DELETE" });
+    const data = await res.json();
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        setActionError(data.error || "Failed to delete stage.");
-        setErrorOpen(true);
-        fetchStages(); // Refresh to catch deactivation status update
-      } else {
-        fetchStages();
-      }
-    } catch (err) {
-      console.error(err);
-      alert("An unexpected error occurred during deletion.");
+    if (!res.ok) {
+      setActionError(data.error || "Failed to delete stage.");
+      setErrorOpen(true);
+      fetchStages();
+      throw new Error(data.error);
     }
+
+    fetchStages();
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -338,7 +341,7 @@ export default function StagesSettingsPage() {
                             key={stage._id}
                             stage={stage}
                             onEdit={openEditDialog}
-                            onDelete={handleDeleteStage}
+                            onDelete={openDeleteDialog}
                             onToggleActive={handleToggleActive}
                           />
                         ))}
@@ -424,6 +427,16 @@ export default function StagesSettingsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Confirmation Dialog for Deletion */}
+      <DeleteConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        item={pendingDeleteStage}
+        entityLabel="stage"
+        consequences="This will permanently remove the stage from the catalog. If the stage is referenced by existing stories, it will be deactivated instead."
+        onConfirm={confirmDeleteStage}
+      />
+
       {/* Confirmation Dialog for Deactivation */}
       <Dialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
         <DialogContent className="sm:max-w-md">
@@ -475,7 +488,7 @@ export default function StagesSettingsPage() {
 interface SortableStageRowProps {
   stage: Stage;
   onEdit: (stage: Stage) => void;
-  onDelete: (id: string) => void;
+  onDelete: (stage: Stage) => void;
   onToggleActive: (stage: Stage, checked: boolean) => void;
 }
 
@@ -562,7 +575,7 @@ function SortableStageRow({
             variant="ghost"
             size="icon-sm"
             title="Delete Permanently"
-            onClick={() => onDelete(stage._id)}
+            onClick={() => onDelete(stage)}
             className="text-destructive hover:text-destructive hover:bg-destructive/10 cursor-pointer"
           >
             <Trash2 className="h-3.5 w-3.5" />

@@ -9,6 +9,7 @@ import {
   ArrowRight,
   RefreshCw,
   AlertTriangle,
+  Trash2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toast";
 import EmptyState from "@/components/shared/EmptyState";
+import DeleteConfirmDialog, { DeleteConfirmItem } from "@/components/shared/DeleteConfirmDialog";
 import StatusBadge from "@/components/shared/StatusBadge";
 import StageBadge from "@/components/shared/StageBadge";
 import { cn } from "@/lib/utils";
@@ -66,6 +68,8 @@ export default function StoriesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [selectedDeveloper, setSelectedDeveloper] = useState("all");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<DeleteConfirmItem | null>(null);
 
   const fetchData = async () => {
     try {
@@ -98,6 +102,36 @@ export default function StoriesPage() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const openDeleteDialog = (story: StoryItem) => {
+    setPendingDelete({
+      id: story._id,
+      name: story.taskName,
+      subtitle: `Story #${story.storyNumber}`,
+    });
+    setDeleteOpen(true);
+  };
+
+  const confirmDeleteStory = async (id: string) => {
+    const res = await fetch(`/api/stories/${id}`, { method: "DELETE" });
+    const data = await res.json();
+
+    if (!res.ok) {
+      toast.add({
+        title: "Delete failed",
+        description: data.error || "Failed to delete story.",
+        type: "error",
+      });
+      throw new Error(data.error);
+    }
+
+    toast.add({
+      title: "Story deleted",
+      description: "The story and all its stage records have been permanently removed.",
+      type: "success",
+    });
+    fetchData();
+  };
 
   const getStoryProgressDetails = (story: StoryItem) => {
     const total = story.childStages.length;
@@ -243,7 +277,7 @@ export default function StoriesPage() {
                     <th className="py-3.5 px-4">Planned End</th>
                     <th className="py-3.5 px-4">Status</th>
                     <th className="py-3.5 px-4 w-[140px] text-center">Progress</th>
-                    <th className="py-3.5 px-4 text-right w-[100px]">Action</th>
+                    <th className="py-3.5 px-4 text-right w-[120px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -302,10 +336,21 @@ export default function StoriesPage() {
                           </div>
                         </td>
                         <td className="py-3.5 px-4 text-right">
-                          <Button variant="outline" size="sm" className="h-7 text-[10px] cursor-pointer" render={<Link href={`/stories/${story._id}`} />}>
-                            View Details
-                            <ArrowRight className="h-3 w-3 ml-1" />
-                          </Button>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="outline" size="sm" className="h-7 text-[10px] cursor-pointer" render={<Link href={`/stories/${story._id}`} />}>
+                              View
+                              <ArrowRight className="h-3 w-3 ml-1" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              title="Delete Story"
+                              onClick={() => openDeleteDialog(story)}
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10 cursor-pointer h-7 w-7"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -316,6 +361,15 @@ export default function StoriesPage() {
           </CardContent>
         </Card>
       )}
+
+      <DeleteConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        item={pendingDelete}
+        entityLabel="story"
+        consequences="This will permanently delete the story, all assigned members, and every child stage record. This action cannot be undone."
+        onConfirm={confirmDeleteStory}
+      />
     </div>
   );
 }

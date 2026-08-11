@@ -2,6 +2,7 @@
 
 import React, { use, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -31,6 +32,7 @@ import {
   Edit,
   FileText,
   GripVertical,
+  Trash2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -43,6 +45,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import JourneyLadder from "@/components/journey/JourneyLadder";
+import DeleteConfirmDialog, { DeleteConfirmItem } from "@/components/shared/DeleteConfirmDialog";
 import { cn } from "@/lib/utils";
 import { getStageColorConfig } from "@/lib/stage-colors";
 
@@ -118,11 +121,14 @@ interface PlannerStage {
 
 export default function StoryDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: storyId } = use(params);
+  const router = useRouter();
 
   // States
   const [story, setStory] = useState<UserStory | null>(null);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<DeleteConfirmItem | null>(null);
   
   const [allUsers, setAllUsers] = useState<DbUser[]>([]);
   const [catalogStages, setCatalogStages] = useState<PlannerStage[]>([]);
@@ -283,6 +289,37 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
     setPlannerStages((prev) => arrayMove(prev, oldIndex, newIndex));
   };
 
+  const openDeleteDialog = () => {
+    if (!story) return;
+    setPendingDelete({
+      id: story._id,
+      name: story.taskName,
+      subtitle: `Story #${story.storyNumber}`,
+    });
+    setDeleteOpen(true);
+  };
+
+  const confirmDeleteStory = async (id: string) => {
+    const res = await fetch(`/api/stories/${id}`, { method: "DELETE" });
+    const data = await res.json();
+
+    if (!res.ok) {
+      toast.add({
+        title: "Delete failed",
+        description: data.error || "Failed to delete story.",
+        type: "error",
+      });
+      throw new Error(data.error);
+    }
+
+    toast.add({
+      title: "Story deleted",
+      description: "The story and all its stage records have been permanently removed.",
+      type: "success",
+    });
+    router.push("/stories");
+  };
+
   const handleEditSubmit = async (values: StoryEditValues) => {
     // 1. Validation checks
     const start = new Date(values.plannedStartDate);
@@ -409,6 +446,15 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
               <Button onClick={openEditDialog} variant="outline" size="sm" className="cursor-pointer">
                 <Edit className="h-4 w-4 mr-1.5" />
                 Edit Details
+              </Button>
+              <Button
+                onClick={openDeleteDialog}
+                variant="outline"
+                size="sm"
+                className="cursor-pointer text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4 mr-1.5" />
+                Delete
               </Button>
             </div>
           </div>
@@ -658,6 +704,15 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
           </form>
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        item={pendingDelete}
+        entityLabel="story"
+        consequences="This will permanently delete the story, all assigned members, and every child stage record. This action cannot be undone."
+        onConfirm={confirmDeleteStory}
+      />
     </div>
   );
 }

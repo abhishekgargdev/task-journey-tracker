@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { motion, AnimatePresence } from "framer-motion";
-import { Calendar, Mail, User as UserIcon, Plus, Loader2, Save, ShieldAlert } from "lucide-react";
+import { Calendar, Mail, User as UserIcon, Plus, Loader2, Save, Trash2 } from "lucide-react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
+import DeleteConfirmDialog, { DeleteConfirmItem } from "@/components/shared/DeleteConfirmDialog";
 
 const userSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
@@ -33,6 +34,10 @@ export default function UsersPage() {
   const [users, setUsers] = useState<DbUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<DeleteConfirmItem | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteErrorOpen, setDeleteErrorOpen] = useState(false);
 
   const {
     register,
@@ -78,6 +83,30 @@ export default function UsersPage() {
       password: "",
     });
     setDialogOpen(true);
+  };
+
+  const openDeleteDialog = (user: DbUser) => {
+    setPendingDelete({ id: user._id, name: user.name, subtitle: user.email });
+    setDeleteOpen(true);
+  };
+
+  const confirmDeleteUser = async (id: string) => {
+    const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
+    const data = await res.json();
+
+    if (!res.ok) {
+      setDeleteError(data.error || "Failed to delete user.");
+      setDeleteErrorOpen(true);
+      fetchUsers();
+      throw new Error(data.error);
+    }
+
+    toast.add({
+      title: "Developer removed",
+      description: "The user account has been permanently deleted.",
+      type: "success",
+    });
+    fetchUsers();
   };
 
   const onSubmit = async (values: UserFormValues) => {
@@ -148,6 +177,7 @@ export default function UsersPage() {
                     <th className="py-3 px-4">User Name</th>
                     <th className="py-3 px-4">Email Address</th>
                     <th className="py-3 px-4 text-right">Date Joined</th>
+                    <th className="py-3 px-4 text-right w-[80px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -181,6 +211,17 @@ export default function UsersPage() {
                               day: "numeric",
                             })}
                           </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            title="Delete Developer"
+                            onClick={() => openDeleteDialog(user)}
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10 cursor-pointer"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
                         </td>
                       </motion.tr>
                     ))}
@@ -263,6 +304,29 @@ export default function UsersPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <DeleteConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        item={pendingDelete}
+        entityLabel="developer"
+        consequences="This will permanently remove the developer account. They will no longer be able to sign in or be assigned to stories."
+        onConfirm={confirmDeleteUser}
+      />
+
+      <Dialog open={deleteErrorOpen} onOpenChange={setDeleteErrorOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              Cannot Delete Developer
+            </DialogTitle>
+            <DialogDescription className="pt-1.5 leading-normal">
+              {deleteError}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="pt-2" showCloseButton={true} />
         </DialogContent>
       </Dialog>
     </div>
