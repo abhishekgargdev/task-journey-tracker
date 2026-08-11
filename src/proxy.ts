@@ -5,7 +5,7 @@ import { jwtVerify } from "jose";
 const SECRET_KEY = process.env.SESSION_SECRET || "default-session-secret-key-at-least-32-chars-long";
 const encodedKey = new TextEncoder().encode(SECRET_KEY);
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Allow login, public API routes, and static assets to bypass check
@@ -25,7 +25,7 @@ export async function middleware(request: NextRequest) {
   }
 
   try {
-    // Edge-compatible session verification using jose
+    // Session verification using jose
     await jwtVerify(sessionToken, encodedKey, {
       algorithms: ["HS256"],
     });

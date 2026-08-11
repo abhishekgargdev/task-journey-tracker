@@ -1,4 +1,10 @@
 import mongoose from "mongoose";
+import "@/models/User";
+import "@/models/Sprint";
+import "@/models/StageDefinition";
+import "@/models/Task";
+import "@/models/UserStory";
+import "@/models/StoryStage";
 
 const MONGODB_URI = process.env.MONGODB_URI;
 
