@@ -15,7 +15,7 @@ export async function PATCH(
     }
 
     const { id } = await params;
-    const { name, description, colorTag, isActive } = await request.json();
+    const { name, description, colorTag, isActive, parentStageId } = await request.json();
 
     await dbConnect();
     const stage = await StageDefinition.findById(id);
@@ -27,6 +27,9 @@ export async function PATCH(
     if (description !== undefined) stage.description = description;
     if (colorTag !== undefined) stage.colorTag = colorTag;
     if (isActive !== undefined) stage.isActive = isActive;
+    if (parentStageId !== undefined) {
+      stage.parentStageId = parentStageId || null;
+    }
 
     await stage.save();
 

@@ -48,12 +48,14 @@ import JourneyLadder from "@/components/journey/JourneyLadder";
 import DeleteConfirmDialog, { DeleteConfirmItem } from "@/components/shared/DeleteConfirmDialog";
 import { cn } from "@/lib/utils";
 import { getStageColorConfig } from "@/lib/stage-colors";
+import { formatDateForInput } from "@/lib/date-utils";
 
 // Validation schema for editing Parent Story
 const storyEditSchema = z.object({
   storyNumber: z.string().min(1, { message: "Story Number is required." }),
   taskName: z.string().min(2, { message: "Task/Story Name is required." }),
   description: z.string().optional(),
+  sprintUrl: z.string().url({ message: "Must be a valid URL." }).or(z.literal("")),
   plannedStartDate: z.string().min(1, { message: "Planned Start Date is required." }),
   plannedEndDate: z.string().min(1, { message: "Planned End Date is required." }),
 });
@@ -99,6 +101,7 @@ interface UserStory {
   storyNumber: string;
   taskName: string;
   description?: string;
+  sprintUrl?: string;
   plannedStartDate: string;
   plannedEndDate: string;
   actualStartDate?: string;
@@ -202,17 +205,13 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
   const openEditDialog = () => {
     if (!story) return;
     
-    const formatDate = (dateStr?: string) => {
-      if (!dateStr) return "";
-      return new Date(dateStr).toISOString().split("T")[0];
-    };
-
     reset({
       storyNumber: story.storyNumber,
       taskName: story.taskName,
       description: story.description || "",
-      plannedStartDate: formatDate(story.plannedStartDate),
-      plannedEndDate: formatDate(story.plannedEndDate),
+      sprintUrl: story.sprintUrl || "",
+      plannedStartDate: formatDateForInput(story.plannedStartDate),
+      plannedEndDate: formatDateForInput(story.plannedEndDate),
     });
 
     // Populate checked users
@@ -485,6 +484,19 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
               </p>
             </div>
             <div className="space-y-1">
+              <span className="text-muted-foreground font-semibold">Sprint URL:</span>
+              <p className="font-medium text-foreground mt-0.5">
+                {story.sprintUrl ? (
+                  <a href={story.sprintUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline inline-flex items-center gap-1 text-xs">
+                    <ExternalLink className="h-3 w-3" />
+                    Open Sprint
+                  </a>
+                ) : (
+                  <span className="italic text-muted-foreground/60">Not set</span>
+                )}
+              </p>
+            </div>
+            <div className="space-y-1">
               <span className="text-muted-foreground font-semibold">Description:</span>
               <p className="text-muted-foreground font-normal mt-0.5 truncate max-w-[320px]" title={story.description}>
                 {story.description || <span className="italic opacity-50">No description provided</span>}
@@ -596,6 +608,20 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
                     className="bg-card min-h-[70px] text-xs"
                     {...register("description")}
                   />
+                </div>
+
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label htmlFor="edit-sprintUrl">Sprint URL</Label>
+                  <Input
+                    id="edit-sprintUrl"
+                    type="url"
+                    placeholder="https://dev.azure.com/.../sprint/..."
+                    className="bg-card h-9 text-xs"
+                    {...register("sprintUrl")}
+                  />
+                  {errors.sprintUrl && (
+                    <p className="text-xs text-destructive font-medium">{errors.sprintUrl.message}</p>
+                  )}
                 </div>
 
                 {/* Dates */}

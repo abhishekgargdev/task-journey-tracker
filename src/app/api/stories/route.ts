@@ -4,7 +4,62 @@ import { Story } from "@/models/Story";
 import { StoryUser } from "@/models/StoryUser";
 import { StoryStage } from "@/models/StoryStage";
 import { StageDefinition } from "@/models/StageDefinition";
+import mongoose from "mongoose";
 import { getSession } from "@/lib/session";
+
+async function createSubTicketsRecursively(
+  storyId: mongoose.Types.ObjectId,
+  parentStage: { _id: mongoose.Types.ObjectId; stageId: mongoose.Types.ObjectId; plannedStartDate?: Date; plannedEndDate?: Date; taskName: string },
+  subTickets: Array<{
+    taskName?: string;
+    description?: string;
+    sprintId?: string;
+    plannedStartDate?: string;
+    plannedEndDate?: string;
+    actualStartDate?: string;
+    actualEndDate?: string;
+    developBy?: string;
+    branchName?: string;
+    githubRepo?: string;
+    status?: string;
+    prStatus?: string;
+    githubPrLink?: string;
+    notes?: string;
+    implementationDescription?: string;
+    adoStoryLink?: string;
+    subTickets?: unknown[];
+  }>
+) {
+  for (let i = 0; i < subTickets.length; i++) {
+    const sub = subTickets[i];
+    const subStage = await StoryStage.create({
+      storyId,
+      stageId: parentStage.stageId,
+      parentStoryStageId: parentStage._id,
+      stageOrder: i + 1,
+      taskName: sub.taskName?.trim() || `Sub-ticket ${i + 1}`,
+      description: sub.description?.trim() || `Sub-ticket under ${parentStage.taskName}`,
+      sprintId: sub.sprintId?.trim() || "",
+      plannedStartDate: sub.plannedStartDate ? new Date(sub.plannedStartDate) : parentStage.plannedStartDate,
+      plannedEndDate: sub.plannedEndDate ? new Date(sub.plannedEndDate) : parentStage.plannedEndDate,
+      actualStartDate: sub.actualStartDate ? new Date(sub.actualStartDate) : undefined,
+      actualEndDate: sub.actualEndDate ? new Date(sub.actualEndDate) : undefined,
+      developBy: sub.developBy || undefined,
+      branchName: sub.branchName?.trim() || "",
+      githubRepo: sub.githubRepo?.trim() || "",
+      status: (sub.status as "not_started" | "in_progress" | "blocked" | "completed" | "delayed") || "not_started",
+      prStatus: (sub.prStatus as "none" | "pending" | "merged") || "none",
+      githubPrLink: sub.githubPrLink?.trim() || "",
+      notes: sub.notes?.trim() || "",
+      implementationDescription: sub.implementationDescription?.trim() || "",
+      adoStoryLink: sub.adoStoryLink?.trim() || "",
+    });
+
+    if (sub.subTickets && Array.isArray(sub.subTickets) && sub.subTickets.length > 0) {
+      await createSubTicketsRecursively(storyId, subStage, sub.subTickets as typeof subTickets);
+    }
+  }
+}
 
 export async function GET(request: Request) {
   try {
@@ -110,6 +165,7 @@ export async function POST(request: Request) {
       storyNumber,
       taskName,
       description,
+      sprintUrl,
       plannedStartDate,
       plannedEndDate,
       stageOrder,
@@ -178,6 +234,7 @@ export async function POST(request: Request) {
       storyNumber: storyNumber.trim(),
       taskName: taskName.trim(),
       description: description || "",
+      sprintUrl: sprintUrl?.trim() || "",
       plannedStartDate: start,
       plannedEndDate: end,
       status: "not_started",
@@ -216,6 +273,7 @@ export async function POST(request: Request) {
       const stageNotes = customDetail?.notes?.trim() || "";
       const stageImplDesc = customDetail?.implementationDescription?.trim() || "";
       const stageAdoLink = customDetail?.adoStoryLink?.trim() || "";
+      const stageSprintId = customDetail?.sprintId?.trim() || "";
 
       const childStage = await StoryStage.create({
         storyId: story._id,
@@ -223,6 +281,7 @@ export async function POST(request: Request) {
         stageOrder: index + 1,
         taskName: `#${storyNumber.trim()}-${stageName}`,
         description: stageDesc,
+        sprintId: stageSprintId,
         plannedStartDate: stagePlannedStart,
         plannedEndDate: stagePlannedEnd,
         actualStartDate: stageActualStart,
@@ -239,6 +298,11 @@ export async function POST(request: Request) {
       });
 
       createdStages.push(childStage);
+
+      // Create nested sub-tickets if provided
+      if (customDetail?.subTickets && Array.isArray(customDetail.subTickets)) {
+        await createSubTicketsRecursively(story._id, childStage, customDetail.subTickets);
+      }
     }
 
     // Synchronize parent overall status based on child statuses

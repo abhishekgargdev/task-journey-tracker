@@ -37,7 +37,9 @@ import {
   Loader2,
   Save,
   GitBranch,
-  GitPullRequest
+  GitPullRequest,
+  Plus,
+  Trash2,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -64,6 +66,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
+import { formatDateForInput, serializeDateInput } from "@/lib/date-utils";
 
 // Types
 interface StageDefinition {
@@ -115,6 +118,9 @@ interface StoryStage {
   notes?: string;
   implementationDescription?: string;
   adoStoryLink?: string;
+  sprintId?: string;
+  parentStoryStageId?: string;
+  children?: StoryStage[];
 }
 
 interface JourneyLadderProps {
@@ -138,6 +144,7 @@ const stageEditSchema = z.object({
   notes: z.string().optional(),
   implementationDescription: z.string().optional(),
   adoStoryLink: z.string().optional(),
+  sprintId: z.string().optional(),
 });
 
 type StageEditFormValues = z.infer<typeof stageEditSchema>;
@@ -398,14 +405,45 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
     }
   };
 
+  const buildStageTree = (flatStages: StoryStage[]): StoryStage[] => {
+    const map = new Map<string, StoryStage>();
+    flatStages.forEach((s) => map.set(s._id, { ...s, children: [] }));
+
+    const roots: StoryStage[] = [];
+    map.forEach((stage) => {
+      const parentId = stage.parentStoryStageId?.toString();
+      if (parentId && map.has(parentId)) {
+        map.get(parentId)!.children!.push(stage);
+      } else if (!parentId) {
+        roots.push(stage);
+      }
+    });
+
+    const sortByOrder = (items: StoryStage[]) =>
+      items.sort((a, b) => (a.stageOrder || 0) - (b.stageOrder || 0));
+
+    const sortRecursive = (items: StoryStage[]) => {
+      sortByOrder(items);
+      items.forEach((item) => {
+        if (item.children?.length) sortRecursive(item.children);
+      });
+    };
+
+    sortRecursive(roots);
+    return roots;
+  };
+
+  const topLevelStages = buildStageTree(stages);
+  const ladderStages = topLevelStages.length > 0 ? topLevelStages : stages.filter((s) => !s.parentStoryStageId);
+
   // Math helper
-  const totalStagesCount = stages.length;
-  const completedStagesCount = stages.filter(s => s.status === "completed").length;
+  const totalStagesCount = ladderStages.length;
+  const completedStagesCount = ladderStages.filter(s => s.status === "completed").length;
   const progressRatio = totalStagesCount > 1 
     ? (completedStagesCount / (totalStagesCount - 1)) * 100 
     : 100;
 
-  const nextStage = stages.find(s => s.status !== "completed");
+  const nextStage = ladderStages.find(s => s.status !== "completed");
   const nextStageName = nextStage?.stageId?.name || "Go Live";
 
   return (
@@ -533,7 +571,7 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
           )}
 
           {/* Render Stepper Steps */}
-          {stages.map((stageVal, index) => {
+          {ladderStages.map((stageVal, index) => {
             const stageDef = stageVal.stageId;
             if (!stageDef) return null;
             const stageColors = getStageColorConfig(stageDef.colorTag);
@@ -587,7 +625,7 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
           </CardDescription>
         </CardHeader>
         <CardContent className="p-4">
-          {stages.length === 0 ? (
+          {ladderStages.length === 0 ? (
             <div className="py-8 text-center text-xs text-muted-foreground">
               No child stories initialized. Configure the stage plan above.
             </div>
@@ -597,7 +635,7 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
               onValueChange={setExpandedItem} 
               className="w-full space-y-3"
             >
-              {stages.map((stageVal) => {
+              {ladderStages.map((stageVal) => {
                 const stageDef = stageVal.stageId;
                 if (!stageDef) return null;
                 return (
@@ -607,8 +645,9 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
                     stageName={stageDef.name}
                     colorTag={stageDef.colorTag}
                     storyId={story._id}
-                    users={story.assignedUsers} // Restricted to Main Story users
+                    users={story.assignedUsers}
                     onRefresh={onRefresh}
+                    childStages={stageVal.children || []}
                   />
                 );
               })}
@@ -714,6 +753,9 @@ export interface ChildStoryAccordionItemProps {
   onRefresh?: () => void;
   mode?: "edit" | "create";
   onChangeDetails?: (stageId: string, details: any) => void;
+  childStages?: any[];
+  depth?: number;
+  isSubTicket?: boolean;
 }
 
 export function ChildStoryAccordionItem({
@@ -725,31 +767,37 @@ export function ChildStoryAccordionItem({
   onRefresh,
   mode = "edit",
   onChangeDetails,
+  childStages = [],
+  depth = 0,
+  isSubTicket = false,
 }: ChildStoryAccordionItemProps) {
   const [copied, setCopied] = useState(false);
+  const [addingChild, setAddingChild] = useState(false);
+  const [newChildName, setNewChildName] = useState("");
+  const [newChildSprintId, setNewChildSprintId] = useState("");
 
   const {
     register,
     handleSubmit,
-    setValue,
     watch,
     formState: { errors, isSubmitting },
   } = useForm<StageEditFormValues>({
     resolver: zodResolver(stageEditSchema),
     defaultValues: {
-      plannedStartDate: storyStage.plannedStartDate ? new Date(storyStage.plannedStartDate).toISOString().split("T")[0] : "",
-      plannedEndDate: storyStage.plannedEndDate ? new Date(storyStage.plannedEndDate).toISOString().split("T")[0] : "",
-      actualStartDate: storyStage.actualStartDate ? new Date(storyStage.actualStartDate).toISOString().split("T")[0] : "",
-      actualEndDate: storyStage.actualEndDate ? new Date(storyStage.actualEndDate).toISOString().split("T")[0] : "",
+      plannedStartDate: formatDateForInput(storyStage.plannedStartDate),
+      plannedEndDate: formatDateForInput(storyStage.plannedEndDate),
+      actualStartDate: formatDateForInput(storyStage.actualStartDate),
+      actualEndDate: formatDateForInput(storyStage.actualEndDate),
       status: storyStage.status,
       githubRepo: storyStage.githubRepo || "",
       branchName: storyStage.branchName || "",
-      prLink: storyStage.githubPrLink || "", // bind correctly to backend githubPrLink
+      prLink: storyStage.githubPrLink || "",
       prStatus: storyStage.prStatus || "none",
-      assignedTo: storyStage.developBy?._id || "", // bind correctly to developBy ID
+      assignedTo: storyStage.developBy?._id || "",
       notes: storyStage.notes || "",
       implementationDescription: storyStage.implementationDescription || "",
       adoStoryLink: storyStage.adoStoryLink || "",
+      sprintId: storyStage.sprintId || "",
     },
   });
 
@@ -765,6 +813,7 @@ export function ChildStoryAccordionItem({
         githubRepo: formValues.githubRepo,
         prStatus: formValues.prStatus,
         githubPrLink: formValues.prLink,
+        sprintId: formValues.sprintId,
         plannedStartDate: formValues.plannedStartDate,
         plannedEndDate: formValues.plannedEndDate,
         actualStartDate: formValues.actualStartDate,
@@ -781,6 +830,7 @@ export function ChildStoryAccordionItem({
     formValues.githubRepo,
     formValues.prStatus,
     formValues.prLink,
+    formValues.sprintId,
     formValues.plannedStartDate,
     formValues.plannedEndDate,
     formValues.actualStartDate,
@@ -792,26 +842,55 @@ export function ChildStoryAccordionItem({
     storyStage._id,
   ]);
 
-  useEffect(() => {
-    if (mode === "create") {
-      const newStart = storyStage.plannedStartDate ? new Date(storyStage.plannedStartDate).toISOString().split("T")[0] : "";
-      const newEnd = storyStage.plannedEndDate ? new Date(storyStage.plannedEndDate).toISOString().split("T")[0] : "";
-      
-      if (newStart && formValues.plannedStartDate !== newStart) {
-        setValue("plannedStartDate", newStart);
-      }
-      if (newEnd && formValues.plannedEndDate !== newEnd) {
-        setValue("plannedEndDate", newEnd);
-      }
+  const handleAddChild = async () => {
+    if (!newChildName.trim()) {
+      toast.add({ title: "Name required", description: "Enter a sub-ticket name.", type: "warning" });
+      return;
     }
-  }, [
-    storyStage.plannedStartDate,
-    storyStage.plannedEndDate,
-    formValues.plannedStartDate,
-    formValues.plannedEndDate,
-    mode,
-    setValue
-  ]);
+
+    try {
+      setAddingChild(true);
+      const res = await fetch(`/api/stories/${storyId}/child-stages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          parentStoryStageId: storyStage._id,
+          taskName: newChildName.trim(),
+          sprintId: newChildSprintId.trim(),
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to add sub-ticket.");
+      }
+
+      toast.add({ title: "Sub-ticket added", description: `"${newChildName}" created successfully.`, type: "success" });
+      setNewChildName("");
+      setNewChildSprintId("");
+      onRefresh?.();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "An error occurred.";
+      toast.add({ title: "Failed to add sub-ticket", description: message, type: "error" });
+    } finally {
+      setAddingChild(false);
+    }
+  };
+
+  const handleDeleteSubTicket = async (childId: string) => {
+    try {
+      const res = await fetch(`/api/stories/${storyId}/child-stages/${childId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to delete sub-ticket.");
+      }
+      toast.add({ title: "Sub-ticket deleted", type: "success" });
+      onRefresh?.();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "An error occurred.";
+      toast.add({ title: "Delete failed", description: message, type: "error" });
+    }
+  };
 
   const onSubmit = async (values: StageEditFormValues) => {
     // Dates validation
@@ -827,15 +906,22 @@ export function ChildStoryAccordionItem({
     try {
       const formatted = {
         ...values,
-        plannedStartDate: values.plannedStartDate ? new Date(values.plannedStartDate).toISOString() : null,
-        plannedEndDate: values.plannedEndDate ? new Date(values.plannedEndDate).toISOString() : null,
-        actualStartDate: values.actualStartDate ? new Date(values.actualStartDate).toISOString() : null,
-        actualEndDate: values.actualEndDate ? new Date(values.actualEndDate).toISOString() : null,
+        plannedStartDate: serializeDateInput(values.plannedStartDate),
+        plannedEndDate: serializeDateInput(values.plannedEndDate),
+        actualStartDate: serializeDateInput(values.actualStartDate),
+        actualEndDate: serializeDateInput(values.actualEndDate),
         assignedTo: values.assignedTo || null,
         prLink: values.prLink || "",
+        sprintId: values.sprintId || "",
       };
 
-      const res = await fetch(`/api/stories/${storyId}/stages/${storyStage.stageId?._id || (storyStage as any).stageId}`, {
+      const stageRefId = storyStage.stageId?._id || storyStage.stageId;
+      const isNested = isSubTicket || !!storyStage.parentStoryStageId;
+      const endpoint = isNested
+        ? `/api/stories/${storyId}/child-stages/${storyStage._id}`
+        : `/api/stories/${storyId}/stages/${stageRefId}`;
+
+      const res = await fetch(endpoint, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formatted),
@@ -897,12 +983,14 @@ export function ChildStoryAccordionItem({
   const isDelayed = storyStage.status === "delayed";
 
   return (
+    <div style={{ marginLeft: depth > 0 ? `${depth * 16}px` : 0 }} className="space-y-3">
     <AccordionItem 
       value={storyStage._id} 
       id={`accordion-item-${storyStage._id}`}
       className={cn(
         "border rounded-xl bg-card overflow-hidden shadow-sm hover:border-primary/10 transition-colors",
-        isDelayed ? "border-rose-200" : "border-border"
+        isDelayed ? "border-rose-200" : "border-border",
+        isSubTicket && "border-l-4 border-l-primary/40"
       )}
     >
       <AccordionTrigger className="px-4 py-3 hover:no-underline hover:bg-muted/10 transition-colors text-foreground">
@@ -964,6 +1052,16 @@ export function ChildStoryAccordionItem({
                 type="url"
                 className="bg-card h-8.5 text-xs" 
                 {...register("adoStoryLink")} 
+              />
+            </div>
+
+            {/* Sprint ID */}
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Sprint ID</Label>
+              <Input
+                placeholder="e.g. Sprint 24 / ADO-12345"
+                className="bg-card h-8.5 text-xs font-mono"
+                {...register("sprintId")}
               />
             </div>
 
@@ -1103,9 +1201,76 @@ export function ChildStoryAccordionItem({
               </Button>
             </div>
           )}
+
+          {/* Nested sub-tickets */}
+          {mode === "edit" && (
+            <div className="pt-4 mt-4 border-t border-border/60 space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-foreground">Sub-tickets ({childStages.length})</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="Sub-ticket name"
+                    value={newChildName}
+                    onChange={(e) => setNewChildName(e.target.value)}
+                    className="h-7 text-xs w-36"
+                  />
+                  <Input
+                    placeholder="Sprint ID"
+                    value={newChildSprintId}
+                    onChange={(e) => setNewChildSprintId(e.target.value)}
+                    className="h-7 text-xs w-28 font-mono"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleAddChild}
+                    disabled={addingChild}
+                    className="h-7 text-xs cursor-pointer"
+                  >
+                    {addingChild ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3 mr-1" />}
+                    Add
+                  </Button>
+                </div>
+              </div>
+
+              {childStages.length > 0 && (
+                <Accordion className="space-y-2">
+                  {childStages.map((child) => (
+                    <ChildStoryAccordionItem
+                      key={child._id}
+                      storyStage={child}
+                      stageName={child.stageId?.name || stageName}
+                      colorTag={child.stageId?.colorTag || colorTag}
+                      storyId={storyId}
+                      users={users}
+                      onRefresh={onRefresh}
+                      childStages={child.children || []}
+                      depth={depth + 1}
+                      isSubTicket
+                    />
+                  ))}
+                </Accordion>
+              )}
+            </div>
+          )}
         </form>
       </AccordionContent>
     </AccordionItem>
+
+    {isSubTicket && mode === "edit" && (
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => handleDeleteSubTicket(storyStage._id)}
+        className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 text-xs cursor-pointer"
+      >
+        <Trash2 className="h-3 w-3 mr-1" />
+        Delete Sub-ticket
+      </Button>
+    )}
+    </div>
   );
 }
 

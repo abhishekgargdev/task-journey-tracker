@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { name, description, colorTag, defaultOrder } = await request.json();
+    const { name, description, colorTag, defaultOrder, parentStageId } = await request.json();
     if (!name) {
       return NextResponse.json({ error: "Stage name is required." }, { status: 400 });
     }
@@ -49,6 +49,7 @@ export async function POST(request: Request) {
       description,
       colorTag: colorTag || "slate",
       defaultOrder: orderValue,
+      parentStageId: parentStageId || null,
       createdBy: session.userId,
     });
 

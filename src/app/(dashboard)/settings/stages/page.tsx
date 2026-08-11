@@ -58,17 +58,19 @@ interface Stage {
   colorTag: string;
   isActive: boolean;
   defaultOrder: number;
+  parentStageId?: string | { _id: string; name: string };
 }
-
-const COLORS = STAGE_COLORS.map(({ name, label, bg, text }) => ({ name, label, bg, text }));
 
 const stageSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
   description: z.string().optional(),
   colorTag: z.string(),
+  parentStageId: z.string().optional(),
 });
 
 type StageFormValues = z.infer<typeof stageSchema>;
+
+const COLORS = STAGE_COLORS.map(({ name, label, bg, text }) => ({ name, label, bg, text }));
 
 export default function StagesSettingsPage() {
   const [stages, setStages] = useState<Stage[]>([]);
@@ -107,6 +109,7 @@ export default function StagesSettingsPage() {
       name: "",
       description: "",
       colorTag: "slate",
+      parentStageId: "",
     },
   });
 
@@ -137,16 +140,21 @@ export default function StagesSettingsPage() {
       name: "",
       description: "",
       colorTag: "slate",
+      parentStageId: "",
     });
     setFormOpen(true);
   };
 
   const openEditDialog = (stage: Stage) => {
     setEditingStage(stage);
+    const parentId = typeof stage.parentStageId === "object"
+      ? stage.parentStageId?._id
+      : stage.parentStageId;
     reset({
       name: stage.name,
       description: stage.description || "",
       colorTag: stage.colorTag,
+      parentStageId: parentId || "",
     });
     setFormOpen(true);
   };
@@ -389,6 +397,24 @@ export default function StagesSettingsPage() {
                   className="bg-card min-h-[80px]"
                   {...register("description")}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="parentStage">Parent Stage (Optional)</Label>
+                <select
+                  id="parentStage"
+                  className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-xs shadow-sm"
+                  {...register("parentStageId")}
+                >
+                  <option value="">None (Top-level stage)</option>
+                  {stages
+                    .filter((s) => s._id !== editingStage?._id)
+                    .map((s) => (
+                      <option key={s._id} value={s._id}>
+                        {s.name}
+                      </option>
+                    ))}
+                </select>
               </div>
 
               <div className="space-y-2">

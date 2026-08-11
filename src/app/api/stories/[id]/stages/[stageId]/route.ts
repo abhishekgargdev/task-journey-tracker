@@ -21,7 +21,12 @@ export async function PATCH(
     await dbConnect();
 
     // Find the story stage
-    const storyStage = await StoryStage.findOne({ storyId, stageId, isArchived: { $ne: true } });
+    const storyStage = await StoryStage.findOne({
+      storyId,
+      stageId,
+      parentStoryStageId: null,
+      isArchived: { $ne: true },
+    });
     if (!storyStage) {
       return NextResponse.json({ error: "Story stage not found." }, { status: 404 });
     }
@@ -76,6 +81,7 @@ export async function PATCH(
       "notes",
       "implementationDescription",
       "adoStoryLink",
+      "sprintId",
     ];
 
     allowedFields.forEach((field) => {

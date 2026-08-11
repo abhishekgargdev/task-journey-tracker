@@ -44,6 +44,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Accordion } from "@/components/ui/accordion";
 import { getStageColorConfig } from "@/lib/stage-colors";
 import { cn } from "@/lib/utils";
+import { formatDateForInput } from "@/lib/date-utils";
 import { ChildStoryAccordionItem } from "@/components/journey/JourneyLadder";
 
 // Validation schema for Story Creation
@@ -51,6 +52,7 @@ const storyFormSchema = z.object({
   storyNumber: z.string().min(1, { message: "Story Number is required." }),
   taskName: z.string().min(2, { message: "Task/Story Name is required." }),
   description: z.string().optional(),
+  sprintUrl: z.string().url({ message: "Must be a valid URL." }).or(z.literal("")),
   plannedStartDate: z.string().min(1, { message: "Planned Start Date is required." }),
   plannedEndDate: z.string().min(1, { message: "Planned End Date is required." }),
 });
@@ -92,6 +94,17 @@ interface StageDetails {
   notes?: string;
   implementationDescription?: string;
   adoStoryLink?: string;
+  sprintId?: string;
+  subTickets?: SubTicketDetails[];
+}
+
+interface SubTicketDetails {
+  tempId: string;
+  taskName: string;
+  sprintId?: string;
+  status?: "not_started" | "in_progress" | "blocked" | "completed" | "delayed";
+  developBy?: string;
+  subTickets?: SubTicketDetails[];
 }
 
 export default function CreateStoryPage() {
@@ -147,6 +160,7 @@ export default function CreateStoryPage() {
       storyNumber: "",
       taskName: "",
       description: "",
+      sprintUrl: "",
       plannedStartDate: "",
       plannedEndDate: "",
     },
@@ -304,6 +318,7 @@ export default function CreateStoryPage() {
         prevDetails.githubRepo === details.githubRepo &&
         prevDetails.prStatus === details.prStatus &&
         prevDetails.githubPrLink === details.githubPrLink &&
+        prevDetails.sprintId === details.sprintId &&
         prevDetails.plannedStartDate === details.plannedStartDate &&
         prevDetails.plannedEndDate === details.plannedEndDate &&
         prevDetails.actualStartDate === details.actualStartDate &&
@@ -488,6 +503,8 @@ export default function CreateStoryPage() {
         prStatus: details.prStatus || "none",
         notes: details.notes || "",
         adoStoryLink: details.adoStoryLink || "",
+        sprintId: details.sprintId || "",
+        subTickets: details.subTickets || [],
       };
     });
 
@@ -619,6 +636,21 @@ export default function CreateStoryPage() {
                     />
                   </div>
 
+                  {/* Sprint URL */}
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="sprintUrl" className="font-semibold text-xs">Sprint URL</Label>
+                    <Input
+                      id="sprintUrl"
+                      type="url"
+                      placeholder="https://dev.azure.com/.../sprint/..."
+                      className="bg-card h-9 text-xs"
+                      {...register("sprintUrl")}
+                    />
+                    {errors.sprintUrl && (
+                      <p className="text-[10px] text-destructive font-semibold">{errors.sprintUrl.message}</p>
+                    )}
+                  </div>
+
                   {/* Dates */}
                   <div className="space-y-1.5">
                     <Label htmlFor="plannedStartDate" className="font-semibold text-xs">Planned Start Date</Label>
@@ -684,8 +716,8 @@ export default function CreateStoryPage() {
                         stageId: stage._id,
                         taskName: `#${parentStoryNumber || "e.g."} - ${stage.name}`,
                         status: details.status || "not_started",
-                        plannedStartDate: details.plannedStartDate || parentStartDate || "",
-                        plannedEndDate: details.plannedEndDate || parentEndDate || "",
+                        plannedStartDate: details.plannedStartDate || "",
+                        plannedEndDate: details.plannedEndDate || "",
                         actualStartDate: details.actualStartDate || "",
                         actualEndDate: details.actualEndDate || "",
                         githubRepo: details.githubRepo || "",
@@ -696,6 +728,7 @@ export default function CreateStoryPage() {
                         notes: details.notes || "",
                         implementationDescription: details.implementationDescription || "",
                         adoStoryLink: details.adoStoryLink || "",
+                        sprintId: details.sprintId || "",
                       };
 
                       return (

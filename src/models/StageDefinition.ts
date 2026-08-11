@@ -7,6 +7,7 @@ export interface IStageDefinition extends Document {
   colorTag?: string;
   isActive: boolean;
   defaultOrder?: number;
+  parentStageId?: mongoose.Types.ObjectId;
   createdBy: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -20,6 +21,7 @@ const StageDefinitionSchema = new Schema<IStageDefinition>(
     colorTag: { type: String },
     isActive: { type: Boolean, default: true, index: true },
     defaultOrder: { type: Number },
+    parentStageId: { type: Schema.Types.ObjectId, ref: "StageDefinition", default: null, index: true },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
   },
   { timestamps: true }
