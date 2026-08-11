@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
-import { UserStory } from "@/models/UserStory";
+import { Story } from "@/models/Story";
 import { StoryStage } from "@/models/StoryStage";
 import { getSession } from "@/lib/session";
 
@@ -18,25 +18,22 @@ export async function POST(
 
     await dbConnect();
 
-    const story = await UserStory.findById(storyId);
+    const story = await Story.findById(storyId);
     if (!story) {
-      return NextResponse.json({ error: "User Story not found." }, { status: 404 });
+      return NextResponse.json({ error: "Story not found." }, { status: 404 });
     }
 
     story.isOnHold = false;
     story.holdReason = undefined;
-    story.overallStatus = "in_progress";
-
-    // Set resumedAt date on the open hold history entry
-    const openHoldIndex = story.holdHistory.findIndex(h => !h.resumedAt);
-    if (openHoldIndex !== -1) {
-      story.holdHistory[openHoldIndex].resumedAt = new Date();
-    }
+    story.status = "in_progress";
 
     await story.save();
 
     // Set the current active stage status back to in_progress
-    const activeStage = await StoryStage.findOne({ story: storyId, order: story.currentStageOrder });
+    const activeStages = await StoryStage.find({ storyId, isArchived: { $ne: true } })
+      .sort({ stageOrder: 1 });
+    
+    const activeStage = activeStages.find((s) => s.status === "blocked" || s.status === "not_started");
     if (activeStage) {
       activeStage.status = "in_progress";
       await activeStage.save();

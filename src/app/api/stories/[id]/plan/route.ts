@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
-import { UserStory } from "@/models/UserStory";
+import { Story } from "@/models/Story";
 import { StoryStage } from "@/models/StoryStage";
+import { StageDefinition } from "@/models/StageDefinition";
 import { getSession } from "@/lib/session";
 
 export async function PATCH(
@@ -15,7 +16,7 @@ export async function PATCH(
     }
 
     const { id: storyId } = await params;
-    const { stagePlan } = await request.json();
+    const { stagePlan } = await request.json(); // stagePlan is an array of stageId strings
 
     if (!stagePlan || !Array.isArray(stagePlan) || stagePlan.length < 1) {
       return NextResponse.json({ error: "Stage plan must have at least one stage definition." }, { status: 400 });
@@ -23,32 +24,25 @@ export async function PATCH(
 
     await dbConnect();
 
-    const story = await UserStory.findById(storyId);
+    const story = await Story.findById(storyId);
     if (!story) {
-      return NextResponse.json({ error: "User Story not found." }, { status: 404 });
+      return NextResponse.json({ error: "Story not found." }, { status: 404 });
     }
 
-    // Fetch existing StoryStage documents for this story
-    const existingStoryStages = await StoryStage.find({ story: storyId }).populate("stage");
-    
-    // Create map based on stage ID string
-    const existingStagesMap = new Map();
-    existingStoryStages.forEach((ss) => {
-      const idStr = ss.stage._id ? ss.stage._id.toString() : ss.stage.toString();
-      existingStagesMap.set(idStr, ss);
-    });
+    // Find all existing child stories for this story
+    const existingChildStages = await StoryStage.find({ storyId });
 
     // Check for removed stages
     const newStageIdsSet = new Set(stagePlan);
-    const removedStages = existingStoryStages.filter((ss) => {
-      const idStr = ss.stage._id ? ss.stage._id.toString() : ss.stage.toString();
-      return !newStageIdsSet.has(idStr);
-    });
+    const removedStages = existingChildStages.filter(
+      (cs) => !cs.isArchived && !newStageIdsSet.has(cs.stageId.toString())
+    );
 
     // Validation: Block removal of any stage that has started (status !== "not_started")
     for (const rs of removedStages) {
       if (rs.status !== "not_started") {
-        const stageName = (rs.stage as any)?.name || "Active Stage";
+        const stageDef = await StageDefinition.findById(rs.stageId);
+        const stageName = stageDef ? stageDef.name : "Active Stage";
         return NextResponse.json(
           { error: `Cannot remove stage '${stageName}' because it has active progress.` },
           { status: 400 }
@@ -56,66 +50,62 @@ export async function PATCH(
       }
     }
 
-    // Identify which stage was active before modification
-    const oldActivePlanEntry = story.stagePlan.find((sp) => sp.order === story.currentStageOrder);
-    const oldActiveStageId = oldActivePlanEntry?.stage.toString();
-
     // 1. Delete removed stages
-    const removedIds = removedStages.map((rs) => rs._id);
-    if (removedIds.length > 0) {
-      await StoryStage.deleteMany({ _id: { $in: removedIds } });
+    for (const rs of removedStages) {
+      // Check if there is actual work/data
+      const hasWork =
+        rs.status !== "not_started" ||
+        rs.actualStartDate ||
+        rs.actualEndDate ||
+        rs.githubPrLink ||
+        rs.branchName ||
+        rs.notes ||
+        rs.implementationDescription ||
+        rs.developBy;
+
+      if (hasWork) {
+        rs.isArchived = true;
+        rs.stageOrder = -1;
+        await rs.save();
+      } else {
+        await StoryStage.findByIdAndDelete(rs._id);
+      }
     }
 
     // 2. Resequence/Update kept stages and Create newly added stages
-    const updatedPlan = [];
     for (let i = 0; i < stagePlan.length; i++) {
       const stageId = stagePlan[i];
       const newOrder = i + 1;
 
-      updatedPlan.push({
-        stage: stageId,
-        order: newOrder,
-      });
-
-      const existingSS = existingStagesMap.get(stageId);
-      if (existingSS) {
-        // Resequence order
-        existingSS.order = newOrder;
-        await existingSS.save();
+      const matched = existingChildStages.find((cs) => cs.stageId.toString() === stageId);
+      if (matched) {
+        matched.stageOrder = newOrder;
+        matched.isArchived = false;
+        await matched.save();
       } else {
-        // Create new StoryStage
+        // Create new child stage
+        const stageDef = await StageDefinition.findById(stageId);
+        const stageName = stageDef ? stageDef.name : "Stage";
+
         await StoryStage.create({
-          story: storyId,
-          stage: stageId,
-          order: newOrder,
+          storyId,
+          stageId,
+          stageOrder: newOrder,
+          taskName: `#${story.storyNumber}-${stageName}`,
+          description: `Deliverable stage for ${stageName}`,
+          plannedStartDate: story.plannedStartDate,
+          plannedEndDate: story.plannedEndDate,
           status: "not_started",
         });
       }
     }
 
-    // 3. Update story.currentStageOrder based on the position of the active stage
-    if (oldActiveStageId) {
-      const newActiveOrderIndex = stagePlan.indexOf(oldActiveStageId);
-      if (newActiveOrderIndex !== -1) {
-        story.currentStageOrder = newActiveOrderIndex + 1;
-      } else {
-        // Fallback: If active stage is missing, keep at 1
-        story.currentStageOrder = 1;
-      }
-    } else {
-      story.currentStageOrder = 1;
-    }
-
-    // 4. Save story's new plan
-    story.stagePlan = updatedPlan as any;
+    // 3. Update story stageOrder
+    story.stageOrder = stagePlan;
     await story.save();
 
-    // Fetch the updated story with populated stage definitions to return
-    const updatedStory = await UserStory.findById(storyId)
-      .populate("task")
-      .populate("sprint")
-      .populate("stagePlan.stage");
-
+    // Return the updated story populated
+    const updatedStory = await Story.findById(storyId).populate("stageOrder");
     return NextResponse.json(updatedStory);
   } catch (error) {
     console.error("PATCH story stagePlan error:", error);

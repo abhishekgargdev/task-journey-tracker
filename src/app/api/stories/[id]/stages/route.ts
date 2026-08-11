@@ -16,9 +16,10 @@ export async function GET(
     const { id: storyId } = await params;
 
     await dbConnect();
-    const stages = await StoryStage.find({ story: storyId })
-      .populate("assignedTo", "name email")
-      .sort({ order: 1 });
+    const stages = await StoryStage.find({ storyId, isArchived: { $ne: true } })
+      .populate("developBy", "name email status")
+      .populate("stageId")
+      .sort({ stageOrder: 1 });
 
     return NextResponse.json(stages);
   } catch (error) {

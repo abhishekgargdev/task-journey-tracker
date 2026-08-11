@@ -5,6 +5,21 @@ import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { 
   ArrowLeft, 
   ExternalLink, 
@@ -14,30 +29,39 @@ import {
   AlertTriangle,
   Loader2,
   Edit,
-  Clock,
-  CheckCircle,
-  FileText
+  FileText,
+  GripVertical,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import StatusBadge from "@/components/shared/StatusBadge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import JourneyLadder from "@/components/journey/JourneyLadder";
+import { cn } from "@/lib/utils";
+import { getStageColorConfig } from "@/lib/stage-colors";
 
-interface TaskItem {
-  _id: string;
-  title: string;
-}
+// Validation schema for editing Parent Story
+const storyEditSchema = z.object({
+  storyNumber: z.string().min(1, { message: "Story Number is required." }),
+  taskName: z.string().min(2, { message: "Task/Story Name is required." }),
+  description: z.string().optional(),
+  plannedStartDate: z.string().min(1, { message: "Planned Start Date is required." }),
+  plannedEndDate: z.string().min(1, { message: "Planned End Date is required." }),
+});
 
-interface SprintItem {
+type StoryEditValues = z.infer<typeof storyEditSchema>;
+
+interface DbUser {
   _id: string;
   name: string;
+  email: string;
+  status: "active" | "inactive";
 }
 
 interface StageDefinition {
@@ -46,87 +70,75 @@ interface StageDefinition {
   colorTag: string;
 }
 
-interface StagePlanEntry {
-  stage: StageDefinition;
-  order: number;
-}
-
-interface UserItem {
+interface StoryStage {
   _id: string;
-  name: string;
-  email: string;
-}
-
-interface StoryHoldHistory {
-  reason: string;
-  heldAt: string;
-  resumedAt?: string;
-  heldBy: UserItem;
+  stageId: StageDefinition;
+  stageOrder: number;
+  taskName: string;
+  description?: string;
+  plannedStartDate?: string;
+  plannedEndDate?: string;
+  actualStartDate?: string;
+  actualEndDate?: string;
+  developBy?: DbUser;
+  githubPrLink?: string;
+  branchName?: string;
+  status: "not_started" | "in_progress" | "blocked" | "completed" | "delayed";
+  githubRepo?: string;
+  prStatus?: "none" | "pending" | "merged";
+  notes?: string;
+  implementationDescription?: string;
+  adoStoryLink?: string;
 }
 
 interface UserStory {
   _id: string;
-  title: string;
+  storyNumber: string;
+  taskName: string;
   description?: string;
-  adoStoryLink?: string;
-  task: TaskItem;
-  sprint: SprintItem;
-  stagePlan: StagePlanEntry[];
-  currentStageOrder: number;
-  overallStatus: "not_started" | "in_progress" | "blocked" | "on_hold" | "completed";
-  assignedTo?: UserItem;
-  state: "New" | "Active" | "Resolved" | "Closed";
-  plannedStartDate?: string;
-  plannedEndDate?: string;
+  plannedStartDate: string;
+  plannedEndDate: string;
   actualStartDate?: string;
   actualEndDate?: string;
+  status: "not_started" | "in_progress" | "blocked" | "completed" | "delayed";
   isOnHold: boolean;
   holdReason?: string;
-  holdHistory: StoryHoldHistory[];
+  stageOrder: StageDefinition[];
+  assignedUsers: DbUser[];
+  childStages: StoryStage[];
 }
 
-interface StoryStage {
+interface PlannerStage {
   _id: string;
-  story: string;
-  stage: string; 
-  order: number;
-  plannedStartDate?: string;
-  plannedEndDate?: string;
-  actualStartDate?: string;
-  actualEndDate?: string;
-  status: "not_started" | "in_progress" | "blocked" | "on_hold" | "completed";
-  githubRepo?: string;
-  branchName?: string;
-  prLink?: string;
-  assignedTo?: UserItem;
-  notes?: string;
+  name: string;
+  colorTag: string;
+  checked: boolean;
+  isStarted: boolean;
 }
-
-const storyEditSchema = z.object({
-  title: z.string().min(2, { message: "Story title must be at least 2 characters." }),
-  description: z.string().optional(),
-  adoStoryLink: z.string().url({ message: "Must be a valid Azure DevOps URL." }).or(z.literal("")),
-  sprint: z.string().min(1, { message: "Sprint is required." }),
-  assignedTo: z.string().optional(),
-  state: z.enum(["New", "Active", "Resolved", "Closed"]),
-  plannedStartDate: z.string().optional().or(z.literal("")),
-  plannedEndDate: z.string().optional().or(z.literal("")),
-  actualStartDate: z.string().optional().or(z.literal("")),
-  actualEndDate: z.string().optional().or(z.literal("")),
-});
-
-type StoryEditValues = z.infer<typeof storyEditSchema>;
 
 export default function StoryDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: storyId } = use(params);
 
   // States
   const [story, setStory] = useState<UserStory | null>(null);
-  const [stages, setStages] = useState<StoryStage[]>([]);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
-  const [sprints, setSprints] = useState<SprintItem[]>([]);
-  const [users, setUsers] = useState<UserItem[]>([]);
+  
+  const [allUsers, setAllUsers] = useState<DbUser[]>([]);
+  const [catalogStages, setCatalogStages] = useState<PlannerStage[]>([]);
+
+  // Dialog State: Checked users checklist
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  // Dialog State: Drag and drop stages checklist
+  const [plannerStages, setPlannerStages] = useState<PlannerStage[]>([]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
 
   const {
     register,
@@ -146,15 +158,10 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
       const storyData = await storyRes.json();
       setStory(storyData);
 
-      const stagesRes = await fetch(`/api/stories/${storyId}/stages`);
-      if (!stagesRes.ok) throw new Error("Failed to load story stages.");
-      const stagesData = await stagesRes.json();
-      setStages(stagesData);
-
     } catch (err: any) {
       console.error(err);
       toast.add({
-        title: "Error loading story details",
+        title: "Error loading details",
         description: err.message || "Failed to load journey tracking records.",
         type: "error",
       });
@@ -165,17 +172,16 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
 
   const fetchSelectOptions = async () => {
     try {
-      const [sprintsRes, usersRes] = await Promise.all([
-        fetch("/api/sprints"),
-        fetch("/api/users")
-      ]);
-      if (sprintsRes.ok) {
-        const sprintsData = await sprintsRes.json();
-        setSprints(sprintsData);
-      }
+      const usersRes = await fetch("/api/users");
       if (usersRes.ok) {
         const usersData = await usersRes.json();
-        setUsers(usersData);
+        setAllUsers(usersData.filter((u: DbUser) => u.status === "active"));
+      }
+
+      const stagesRes = await fetch("/api/stages?active=true");
+      if (stagesRes.ok) {
+        const stagesData = await stagesRes.json();
+        setCatalogStages(stagesData);
       }
     } catch (err) {
       console.error("Failed to load select options:", err);
@@ -196,29 +202,127 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
     };
 
     reset({
-      title: story.title,
+      storyNumber: story.storyNumber,
+      taskName: story.taskName,
       description: story.description || "",
-      adoStoryLink: story.adoStoryLink || "",
-      sprint: story.sprint?._id || "",
-      assignedTo: story.assignedTo?._id || "",
-      state: story.state || "New",
       plannedStartDate: formatDate(story.plannedStartDate),
       plannedEndDate: formatDate(story.plannedEndDate),
-      actualStartDate: formatDate(story.actualStartDate),
-      actualEndDate: formatDate(story.actualEndDate),
     });
+
+    // Populate checked users
+    setSelectedUserIds(story.assignedUsers.map((u) => u._id));
+
+    // Populate checklist stages in planner.
+    // Started/Completed stages are marked as locked (checked & isStarted).
+    const activeStagePlanIds = story.stageOrder.map((s) => s._id);
+    const sortedPlanner = catalogStages.map((stage) => {
+      const matchedStage = story.childStages.find((cs) => cs.stageId?._id === stage._id);
+      const isChecked = activeStagePlanIds.includes(stage._id);
+      const isStarted = matchedStage ? matchedStage.status !== "not_started" : false;
+
+      return {
+        _id: stage._id,
+        name: stage.name,
+        colorTag: stage.colorTag,
+        checked: isChecked,
+        isStarted,
+      };
+    });
+
+    // Resequence planner list to match the current story's stageOrder position
+    const orderedPlanner = [
+      ...story.stageOrder.map((s) => {
+        const pStage = sortedPlanner.find((ps) => ps._id === s._id);
+        return pStage || null;
+      }).filter(Boolean),
+      ...sortedPlanner.filter((ps) => !activeStagePlanIds.includes(ps._id)),
+    ] as PlannerStage[];
+
+    setPlannerStages(orderedPlanner);
     setEditOpen(true);
   };
 
+  const handleToggleStageCheck = (id: string) => {
+    setPlannerStages((prev) =>
+      prev.map((s) => {
+        if (s._id === id) {
+          if (s.isStarted) return s; // lock started stages
+          return { ...s, checked: !s.checked };
+        }
+        return s;
+      })
+    );
+  };
+
+  const handleToggleUserCheck = (id: string) => {
+    setSelectedUserIds((prev) =>
+      prev.includes(id) ? prev.filter((uid) => uid !== id) : [...prev, id]
+    );
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = plannerStages.findIndex((s) => s._id === active.id);
+    const newIndex = plannerStages.findIndex((s) => s._id === over.id);
+
+    const activeItem = plannerStages[oldIndex];
+    const overItem = plannerStages[newIndex];
+
+    // cannot reorder started/completed stages
+    if (activeItem.isStarted || overItem.isStarted) {
+      toast.add({
+        title: "Reordering blocked",
+        description: "Stages with active progress (completed, in progress, blocked) are locked at the top of the plan.",
+        type: "warning",
+      });
+      return;
+    }
+
+    setPlannerStages((prev) => arrayMove(prev, oldIndex, newIndex));
+  };
+
   const handleEditSubmit = async (values: StoryEditValues) => {
+    // 1. Validation checks
+    const start = new Date(values.plannedStartDate);
+    const end = new Date(values.plannedEndDate);
+    if (end < start) {
+      toast.add({
+        title: "Validation error",
+        description: "Planned End Date cannot be before Planned Start Date.",
+        type: "warning",
+      });
+      return;
+    }
+
+    const selectedStagePlanIds = plannerStages
+      .filter((s) => s.checked)
+      .map((s) => s._id);
+
+    if (selectedStagePlanIds.length === 0) {
+      toast.add({
+        title: "Validation error",
+        description: "Please select at least one stage for this story.",
+        type: "warning",
+      });
+      return;
+    }
+
+    if (selectedUserIds.length === 0) {
+      toast.add({
+        title: "Validation error",
+        description: "Please select at least one user to assign to this story.",
+        type: "warning",
+      });
+      return;
+    }
+
     try {
       const payload = {
         ...values,
-        assignedTo: values.assignedTo || null,
-        plannedStartDate: values.plannedStartDate ? new Date(values.plannedStartDate).toISOString() : null,
-        plannedEndDate: values.plannedEndDate ? new Date(values.plannedEndDate).toISOString() : null,
-        actualStartDate: values.actualStartDate ? new Date(values.actualStartDate).toISOString() : null,
-        actualEndDate: values.actualEndDate ? new Date(values.actualEndDate).toISOString() : null,
+        userIds: selectedUserIds,
+        stageOrder: selectedStagePlanIds,
       };
 
       const res = await fetch(`/api/stories/${storyId}`, {
@@ -234,7 +338,7 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
 
       toast.add({
         title: "Story updated",
-        description: "User story details saved successfully.",
+        description: "Parent story details saved successfully.",
         type: "success",
       });
 
@@ -254,7 +358,7 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
     return (
       <div className="flex flex-col items-center justify-center py-40 gap-3">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">Loading story journey detail...</p>
+        <p className="text-sm text-muted-foreground">Loading story journey details...</p>
       </div>
     );
   }
@@ -292,21 +396,16 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
             <div className="space-y-1">
               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">User Story Journey</span>
               <div className="flex items-center gap-2.5 flex-wrap">
-                <CardTitle className="text-xl font-bold font-sans text-foreground">
-                  {story.title}
+                <Badge className="bg-primary/5 text-primary text-xs font-mono font-bold border border-primary/20">
+                  #{story.storyNumber}
+                </Badge>
+                <CardTitle className="text-lg font-bold font-sans text-foreground">
+                  {story.taskName}
                 </CardTitle>
-                {story.adoStoryLink && (
-                  <a href={story.adoStoryLink} target="_blank" rel="noreferrer" className="text-primary p-1 hover:bg-muted rounded inline-flex items-center">
-                    <ExternalLink className="h-4 w-4" />
-                  </a>
-                )}
               </div>
             </div>
-            <div className="flex items-center gap-3 self-start sm:self-center">
-              <Badge className="bg-primary/10 text-primary border-none font-bold py-1 px-3">
-                {story.state || "New"}
-              </Badge>
-              <StatusBadge status={story.overallStatus} />
+            <div className="flex items-center gap-2.5 self-start sm:self-center">
+              <StatusBadge status={story.status} />
               <Button onClick={openEditDialog} variant="outline" size="sm" className="cursor-pointer">
                 <Edit className="h-4 w-4 mr-1.5" />
                 Edit Details
@@ -316,35 +415,33 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
         </CardHeader>
         <CardContent className="py-4 space-y-4 text-xs">
           {/* Metadata Grid */}
-          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
             <div className="space-y-1">
-              <span className="text-muted-foreground font-semibold">Parent Task:</span>
-              <p className="font-semibold text-foreground">
-                {story.task ? (
-                  <Link href={`/tasks/${story.task._id}`} className="text-primary hover:underline">
-                    {story.task.title}
-                  </Link>
+              <span className="text-muted-foreground font-semibold">Assigned Members:</span>
+              <p className="font-semibold text-foreground flex flex-wrap gap-1.5 mt-0.5">
+                {story.assignedUsers.length === 0 ? (
+                  <span className="italic text-muted-foreground/60">No members assigned</span>
                 ) : (
-                  "None"
+                  story.assignedUsers.map((u) => (
+                    <span key={u._id} className="bg-secondary/80 text-secondary-foreground text-[10px] font-semibold px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                      <UserIcon className="h-2.5 w-2.5" />
+                      {u.name}
+                    </span>
+                  ))
                 )}
               </p>
             </div>
             <div className="space-y-1">
-              <span className="text-muted-foreground font-semibold">Sprint Workspace:</span>
-              <p className="font-semibold text-foreground">{story.sprint?.name || "Unassigned"}</p>
-            </div>
-            <div className="space-y-1">
-              <span className="text-muted-foreground font-semibold">Assigned Developer:</span>
-              <p className="font-semibold text-foreground flex items-center gap-1.5">
-                <UserIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                {story.assignedTo?.name || "Unassigned"}
+              <span className="text-muted-foreground font-semibold">Pipeline Length:</span>
+              <p className="font-semibold text-foreground flex items-center gap-1 mt-0.5">
+                <Layers className="h-3.5 w-3.5 text-primary" />
+                {story.stageOrder.length} delivery stages sequenced
               </p>
             </div>
             <div className="space-y-1">
-              <span className="text-muted-foreground font-semibold">Pipeline Length:</span>
-              <p className="font-semibold text-foreground flex items-center gap-1">
-                <Layers className="h-3.5 w-3.5 text-primary" />
-                {story.stagePlan.length} delivery stages mapped
+              <span className="text-muted-foreground font-semibold">Description:</span>
+              <p className="text-muted-foreground font-normal mt-0.5 truncate max-w-[320px]" title={story.description}>
+                {story.description || <span className="italic opacity-50">No description provided</span>}
               </p>
             </div>
           </div>
@@ -393,7 +490,7 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
             <div className="pt-3 border-t border-border/60 space-y-1">
               <span className="text-muted-foreground font-semibold flex items-center gap-1.5">
                 <FileText className="h-3.5 w-3.5 text-muted-foreground/75" />
-                Description & Scope
+                Detailed Scope
               </span>
               <p className="text-xs text-foreground/80 leading-relaxed bg-muted/5 p-3 rounded-lg border border-border/40 whitespace-pre-wrap">
                 {story.description}
@@ -403,31 +500,45 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
         </CardContent>
       </Card>
 
-      {/* Centerpiece Journey Stepper Ladder */}
-      <JourneyLadder story={story} stages={stages} onRefresh={fetchStoryDetails} />
+      {/* Stepper Ladder & Accordion child stories */}
+      <JourneyLadder story={story as any} stages={story.childStages as any} onRefresh={fetchStoryDetails} />
 
       {/* Edit Story Details Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit Story Details</DialogTitle>
+            <DialogTitle>Edit Main Story Details</DialogTitle>
             <DialogDescription>
-              Update credentials and process-tracking configurations for this story.
+              Update story fields, team assignments, and delivery pipelines.
             </DialogDescription>
           </DialogHeader>
+
           <form onSubmit={handleSubmit(handleEditSubmit)}>
             <div className="space-y-4 py-2">
               <div className="grid gap-4 sm:grid-cols-2">
-                {/* Title */}
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label htmlFor="edit-title">Story Title</Label>
+                {/* Story Number */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-storyNumber">Story Number</Label>
                   <Input
-                    id="edit-title"
-                    className="bg-card"
-                    {...register("title")}
+                    id="edit-storyNumber"
+                    className="bg-card h-9 text-xs font-mono"
+                    {...register("storyNumber")}
                   />
-                  {errors.title && (
-                    <p className="text-xs text-destructive font-medium">{errors.title.message}</p>
+                  {errors.storyNumber && (
+                    <p className="text-xs text-destructive font-medium">{errors.storyNumber.message}</p>
+                  )}
+                </div>
+
+                {/* Story/Task Name */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-taskName">Story Name</Label>
+                  <Input
+                    id="edit-taskName"
+                    className="bg-card h-9 text-xs"
+                    {...register("taskName")}
+                  />
+                  {errors.taskName && (
+                    <p className="text-xs text-destructive font-medium">{errors.taskName.message}</p>
                   )}
                 </div>
 
@@ -436,75 +547,14 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
                   <Label htmlFor="edit-description">Description</Label>
                   <Textarea
                     id="edit-description"
-                    className="bg-card min-h-[80px] text-xs"
+                    className="bg-card min-h-[70px] text-xs"
                     {...register("description")}
                   />
                 </div>
 
-                {/* Sprint */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-sprint">Sprint</Label>
-                  <select
-                    id="edit-sprint"
-                    className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    {...register("sprint")}
-                  >
-                    {sprints.map((s) => (
-                      <option key={s._id} value={s._id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* ADO Link */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-ado">ADO Link (Optional)</Label>
-                  <Input
-                    id="edit-ado"
-                    className="bg-card"
-                    {...register("adoStoryLink")}
-                  />
-                  {errors.adoStoryLink && (
-                    <p className="text-xs text-destructive font-medium">{errors.adoStoryLink.message}</p>
-                  )}
-                </div>
-
-                {/* Assignee */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-assignee">Assigned Developer</Label>
-                  <select
-                    id="edit-assignee"
-                    className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    {...register("assignedTo")}
-                  >
-                    <option value="">Unassigned</option>
-                    {users.map((u) => (
-                      <option key={u._id} value={u._id}>
-                        {u.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* State */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-state">ADO State</Label>
-                  <select
-                    id="edit-state"
-                    className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    {...register("state")}
-                  >
-                    <option value="New">New</option>
-                    <option value="Active">Active</option>
-                    <option value="Resolved">Resolved</option>
-                    <option value="Closed">Closed</option>
-                  </select>
-                </div>
-
                 {/* Dates */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="edit-plannedStart">Planned Start</Label>
+                  <Label htmlFor="edit-plannedStart">Planned Start Date</Label>
                   <Input
                     id="edit-plannedStart"
                     type="date"
@@ -514,7 +564,7 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="edit-plannedEnd">Planned End</Label>
+                  <Label htmlFor="edit-plannedEnd">Planned End Date</Label>
                   <Input
                     id="edit-plannedEnd"
                     type="date"
@@ -522,28 +572,77 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
                     {...register("plannedEndDate")}
                   />
                 </div>
+              </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-actualStart">Actual Start</Label>
-                  <Input
-                    id="edit-actualStart"
-                    type="date"
-                    className="bg-card h-9 text-xs"
-                    {...register("actualStartDate")}
-                  />
+              {/* Users Checklist */}
+              <div className="space-y-2 pt-1.5">
+                <Label className="text-sm font-semibold text-foreground">Story Members</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Check developers assigned to this Main Story. Note: You cannot remove a developer currently assigned to any active stage.
+                </p>
+                <div className="grid grid-cols-2 gap-2 border border-border rounded-lg p-2.5 bg-muted/20 max-h-[140px] overflow-y-auto">
+                  {allUsers.map((user) => {
+                    const isChecked = selectedUserIds.includes(user._id);
+                    return (
+                      <div
+                        key={user._id}
+                        onClick={() => handleToggleUserCheck(user._id)}
+                        className={cn(
+                          "flex items-center gap-2 rounded-md border p-2 bg-card cursor-pointer hover:bg-muted/40 transition-colors select-none",
+                          isChecked && "border-primary/40 bg-primary/5"
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {}}
+                          className="h-3.5 w-3.5 rounded border-border text-primary focus:ring-primary accent-primary"
+                        />
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-[11px] font-semibold text-foreground truncate">{user.name}</span>
+                          <span className="text-[9px] text-muted-foreground truncate">{user.email}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
+              </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-actualEnd">Actual End</Label>
-                  <Input
-                    id="edit-actualEnd"
-                    type="date"
-                    className="bg-card h-9 text-xs"
-                    {...register("actualEndDate")}
-                  />
+              {/* Stages checklist sequencer */}
+              <div className="space-y-2 pt-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-semibold text-foreground">Pipeline Stage Sequence</Label>
+                  <span className="text-xs font-medium text-primary bg-primary/5 px-2.5 py-0.5 rounded-full">
+                    {plannerStages.filter((s) => s.checked).length} selected
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Toggle stages to add/remove, and drag rows to reorder. Completed/active stages are locked at the top.
+                </p>
+
+                <div className="space-y-2 border border-border rounded-lg p-2 bg-muted/20 max-h-[220px] overflow-y-auto">
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext
+                      items={plannerStages.map((s) => s._id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {plannerStages.map((stage) => (
+                        <SortableStageRow
+                          key={stage._id}
+                          stage={stage}
+                          onToggle={handleToggleStageCheck}
+                        />
+                      ))}
+                    </SortableContext>
+                  </DndContext>
                 </div>
               </div>
             </div>
+
             <DialogFooter className="pt-4" showCloseButton={true}>
               <Button type="submit" disabled={isSubmitting} className="cursor-pointer">
                 {isSubmitting ? (
@@ -559,6 +658,88 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
           </form>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// Drag & Drop Row for Editing
+interface SortableStageRowProps {
+  stage: PlannerStage;
+  onToggle: (id: string) => void;
+}
+
+function SortableStageRow({ stage, onToggle }: SortableStageRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: stage._id, disabled: stage.isStarted });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : 1,
+    position: "relative" as const,
+  };
+
+  const colors = getStageColorConfig(stage.colorTag);
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "flex items-center gap-2 rounded-lg border p-2 bg-card hover:bg-muted/40 transition-colors",
+        stage.isStarted ? "border-emerald-200 bg-emerald-50/10" : "border-border",
+        isDragging && "shadow-md bg-accent/80 border-primary/20 opacity-80 z-50 select-none"
+      )}
+    >
+      {!stage.isStarted ? (
+        <button
+          type="button"
+          className="p-1 rounded text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing touch-none select-none border-none bg-transparent outline-none"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      ) : (
+        <div className="p-1 text-emerald-500 shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M20 6 9 17l-5-5"/></svg>
+        </div>
+      )}
+
+      <input
+        type="checkbox"
+        id={`edit-stage-check-${stage._id}`}
+        checked={stage.checked}
+        disabled={stage.isStarted}
+        onChange={() => onToggle(stage._id)}
+        className="h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+      />
+
+      <label
+        htmlFor={`edit-stage-check-${stage._id}`}
+        className={cn(
+          "flex-1 text-xs font-semibold select-none cursor-pointer disabled:cursor-not-allowed",
+          stage.isStarted ? "text-emerald-700 font-bold" : stage.checked ? "text-foreground" : "text-muted-foreground/60 line-through"
+        )}
+      >
+        {stage.name}
+      </label>
+
+      {stage.isStarted ? (
+        <Badge className="bg-emerald-100 hover:bg-emerald-100 text-emerald-700 border-none font-bold text-[9px] py-0 px-1.5 uppercase">
+          Started
+        </Badge>
+      ) : (
+        <Badge className={cn("capitalize text-[9px] font-bold border-none bg-secondary/80", colors.text)}>
+          {stage.colorTag}
+        </Badge>
+      )}
     </div>
   );
 }

@@ -36,9 +36,8 @@ async function main() {
   const { default: dbConnect } = await import("../src/lib/mongodb");
   const { User } = await import("../src/models/User");
   const { StageDefinition } = await import("../src/models/StageDefinition");
-  const { Sprint } = await import("../src/models/Sprint");
-  const { Task } = await import("../src/models/Task");
-  const { UserStory } = await import("../src/models/UserStory");
+  const { Story } = await import("../src/models/Story");
+  const { StoryUser } = await import("../src/models/StoryUser");
   const { StoryStage } = await import("../src/models/StoryStage");
 
   await dbConnect();
@@ -48,14 +47,21 @@ async function main() {
   await Promise.all([
     User.deleteMany({}),
     StageDefinition.deleteMany({}),
-    Sprint.deleteMany({}),
-    Task.deleteMany({}),
-    UserStory.deleteMany({}),
+    Story.deleteMany({}),
+    StoryUser.deleteMany({}),
     StoryStage.deleteMany({}),
   ]);
   console.log("Cleared all existing database collections.");
 
-  // Seed Users
+  // Drop old indexes to prevent E11000 duplicate key error from legacy schema index
+  try {
+    await StoryStage.collection.dropIndexes();
+    console.log("Dropped legacy indexes on StoryStage collection.");
+  } catch (err) {
+    // Ignore error if indexes don't exist
+  }
+
+  // Seed Users with status
   const seedEmail = process.env.SEED_EMAIL || "abhishekgargdev959@gmail.com";
   const seedPassword = process.env.SEED_PASSWORD || "Test@1234";
   const hashedSeedPassword = await bcrypt.hash(seedPassword, 10);
@@ -64,18 +70,21 @@ async function main() {
     name: "Your Name",
     email: seedEmail,
     passwordHash: hashedSeedPassword,
+    status: "active",
   });
 
   const secondaryUser1 = await User.create({
     name: "Alex Rivera",
     email: "alex.r@company.com",
     passwordHash: await bcrypt.hash("user123", 10),
+    status: "active",
   });
 
   const secondaryUser2 = await User.create({
     name: "Sarah Jenkins",
     email: "sarah.j@company.com",
     passwordHash: await bcrypt.hash("user123", 10),
+    status: "active",
   });
 
   console.log(`Seeded 3 users. Main login: ${seedEmail} / ${seedPassword}`);
@@ -107,36 +116,6 @@ async function main() {
   }
   console.log(`Seeded ${stageDocs.length} pipeline catalog stages.`);
 
-  // Seed Sprint
-  const twoWeeksAgo = new Date();
-  twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-  const oneWeekFromNow = new Date();
-  oneWeekFromNow.setDate(oneWeekFromNow.getDate() + 7);
-
-  const activeSprint = await Sprint.create({
-    name: "Sprint 1 - Core Flow Integration",
-    startDate: twoWeeksAgo,
-    endDate: oneWeekFromNow,
-    status: "active",
-  });
-  console.log(`Seeded active Sprint: "${activeSprint.name}"`);
-
-  // Seed Tasks
-  const task1 = await Task.create({
-    title: "Configure Custom Pipelines API",
-    description: "Build Mongoose schemas and REST API endpoints for dynamic stage catalogs and sequences.",
-    adoTaskLink: "https://dev.azure.com/bajaj/tjt/_workitems/edit/12450",
-    owner: mainUser._id,
-  });
-
-  const task2 = await Task.create({
-    title: "Deliver Drag and Drop Dashboard UI",
-    description: "Implement Sortable dnd-kit stages editor screen featuring micro-animations.",
-    adoTaskLink: "https://dev.azure.com/bajaj/tjt/_workitems/edit/12451",
-    owner: secondaryUser1._id,
-  });
-  console.log("Seeded 2 sample Tasks.");
-
   // Helper to create planned/actual dates realistically
   const getDateOffset = (days: number) => {
     const d = new Date();
@@ -144,213 +123,167 @@ async function main() {
     return d;
   };
 
-  // Seed User Stories (5 stories)
-  // Story 1: Uses all 9 stages, currentStageOrder = 3 (Test Scenarios)
-  const planAll9 = stageDocs.map((doc, idx) => ({ stage: doc._id as mongoose.Types.ObjectId, order: idx + 1 }));
-  
-  const story1 = await UserStory.create({
-    title: "Deploy Multi-Region Compliance Rules",
-    adoStoryLink: "https://dev.azure.com/bajaj/tjt/_workitems/edit/55101",
-    task: task1._id,
-    sprint: activeSprint._id,
-    stagePlan: planAll9,
-    currentStageOrder: 3,
-    overallStatus: "in_progress",
+  const allStageIds = stageDocs.map((d) => d._id);
+
+  // Story 1: Multi-Region Compliance
+  const story1 = await Story.create({
+    storyNumber: "55101",
+    taskName: "Deploy Multi-Region Compliance Rules",
+    description: "Ensure multi-region database queries adhere to international privacy compliance rules.",
+    plannedStartDate: getDateOffset(-12),
+    plannedEndDate: getDateOffset(6),
+    status: "in_progress",
+    stageOrder: allStageIds,
   });
 
-  // Story Stages for Story 1
-  for (const step of planAll9) {
+  // Story 1 User Assignments
+  await StoryUser.create({ storyId: story1._id, userId: mainUser._id });
+  await StoryUser.create({ storyId: story1._id, userId: secondaryUser1._id });
+
+  // Story 1 Child Stages
+  for (let i = 0; i < stageDocs.length; i++) {
+    const stage = stageDocs[i];
+    const order = i + 1;
     let status: "completed" | "in_progress" | "not_started" = "not_started";
     let actualStart, actualEnd;
-    if (step.order < 3) {
+    if (order < 3) {
       status = "completed";
-      actualStart = getDateOffset(-10 + step.order * 2);
-      actualEnd = getDateOffset(-9 + step.order * 2);
-    } else if (step.order === 3) {
+      actualStart = getDateOffset(-10 + order * 2);
+      actualEnd = getDateOffset(-9 + order * 2);
+    } else if (order === 3) {
       status = "in_progress";
       actualStart = getDateOffset(-4);
     }
 
     await StoryStage.create({
-      story: story1._id,
-      stage: step.stage,
-      order: step.order,
-      plannedStartDate: getDateOffset(-12 + step.order * 2),
-      plannedEndDate: getDateOffset(-10 + step.order * 2),
+      storyId: story1._id,
+      stageId: stage._id,
+      stageOrder: order,
+      taskName: `#55101-${stage.name}`,
+      description: `VerifyCompliance for ${stage.name}.`,
+      plannedStartDate: getDateOffset(-12 + order * 2),
+      plannedEndDate: getDateOffset(-10 + order * 2),
       actualStartDate: actualStart,
       actualEndDate: actualEnd,
+      developBy: order % 2 === 0 ? secondaryUser1._id : mainUser._id,
+      githubPrLink: order < 3 ? "https://github.com/org/repo/pull/" + (100 + order) : (order === 3 ? "https://github.com/org/repo/pull/103" : undefined),
+      branchName: order <= 3 ? `feature/compliance-rules-stage-${order}` : undefined,
       status,
-      githubRepo: step.order === 2 ? "bajaj-finserv/pipeline-rules" : undefined,
-      branchName: step.order === 2 ? "feature/compliance-rules" : undefined,
-      assignedTo: step.order % 2 === 0 ? secondaryUser1._id : mainUser._id,
-      notes: step.order === 3 ? "Active verification of mock criteria matches." : undefined,
+      githubRepo: order <= 3 ? "org/repo" : undefined,
+      prStatus: status === "completed" ? "merged" : status === "in_progress" ? "pending" : "none",
+      implementationDescription: `Executed setup for Stage ${order}.`,
+      notes: order === 3 ? "Active verification of mock criteria matches." : undefined,
+      adoStoryLink: `https://dev.azure.com/work/55101#${order}`,
     });
   }
 
-  // Story 2: Uses all 9 stages, currentStageOrder = 8 (Production Patch)
-  const story2 = await UserStory.create({
-    title: "Enable Tokenized Multi-Factor Gateways",
-    adoStoryLink: "https://dev.azure.com/bajaj/tjt/_workitems/edit/55102",
-    task: task1._id,
-    sprint: activeSprint._id,
-    stagePlan: planAll9,
-    currentStageOrder: 8,
-    overallStatus: "in_progress",
+  // Story 2: Tokenized MFA (Delayed/At Risk)
+  const story2 = await Story.create({
+    storyNumber: "55102",
+    taskName: "Enable Tokenized Multi-Factor Gateways",
+    description: "Provide robust multi-factor token authentication gateways for high-security transactions.",
+    plannedStartDate: getDateOffset(-14),
+    plannedEndDate: getDateOffset(-1), // Past planned end date
+    status: "delayed",
+    stageOrder: allStageIds,
   });
 
-  for (const step of planAll9) {
-    let status: "completed" | "in_progress" | "not_started" = "not_started";
+  // Story 2 User Assignments
+  await StoryUser.create({ storyId: story2._id, userId: secondaryUser1._id });
+  await StoryUser.create({ storyId: story2._id, userId: secondaryUser2._id });
+
+  for (let i = 0; i < stageDocs.length; i++) {
+    const stage = stageDocs[i];
+    const order = i + 1;
+    let status: "completed" | "in_progress" | "not_started" | "delayed" = "not_started";
     let actualStart, actualEnd;
-    if (step.order < 8) {
+    if (order < 8) {
       status = "completed";
-      actualStart = getDateOffset(-12 + step.order);
-      actualEnd = getDateOffset(-11 + step.order);
-    } else if (step.order === 8) {
-      status = "in_progress";
+      actualStart = getDateOffset(-12 + order);
+      actualEnd = getDateOffset(-11 + order);
+    } else if (order === 8) {
+      status = "delayed"; // Delayed stage
       actualStart = getDateOffset(-2);
     }
 
     await StoryStage.create({
-      story: story2._id,
-      stage: step.stage,
-      order: step.order,
-      plannedStartDate: getDateOffset(-14 + step.order),
-      plannedEndDate: getDateOffset(-13 + step.order),
+      storyId: story2._id,
+      stageId: stage._id,
+      stageOrder: order,
+      taskName: `#55102-${stage.name}`,
+      description: `Integrate MFA for ${stage.name}.`,
+      plannedStartDate: getDateOffset(-14 + order),
+      plannedEndDate: getDateOffset(-13 + order), // All stages planned dates are in the past
       actualStartDate: actualStart,
       actualEndDate: actualEnd,
+      developBy: order === 8 ? secondaryUser2._id : secondaryUser1._id,
+      githubPrLink: order < 8 ? "https://github.com/org/repo/pull/" + (200 + order) : (order === 8 ? "https://github.com/org/repo/pull/208" : undefined),
+      branchName: order <= 8 ? `feature/mfa-gateway-stage-${order}` : undefined,
       status,
-      assignedTo: step.order === 8 ? secondaryUser2._id : secondaryUser1._id,
-      notes: step.order === 8 ? "Applying dry run scripts on replica sandbox." : undefined,
+      githubRepo: order <= 8 ? "org/repo" : undefined,
+      prStatus: status === "completed" ? "merged" : status === "delayed" ? "pending" : "none",
+      implementationDescription: `MFA stage ${order} implementation.`,
+      adoStoryLink: `https://dev.azure.com/work/55102#${order}`,
     });
   }
 
-  // Story 3: Uses 6 stages (skips stage 6 and 7: N2P Patch Dev and N2P Testing)
-  // Stage index mapping: 0, 1, 2, 3, 4, 8 (Partner Discussion, Dev, Test Scenarios, IT UAT, Biz UAT, Go Live)
-  const chosen6Indices = [0, 1, 2, 3, 4, 8];
-  const plan6 = chosen6Indices.map((idx, orderIdx) => ({
-    stage: stageDocs[idx]._id as mongoose.Types.ObjectId,
-    order: orderIdx + 1,
-  }));
-
-  const story3 = await UserStory.create({
-    title: "Refactor Vault Credentials Auditing",
-    adoStoryLink: "https://dev.azure.com/bajaj/tjt/_workitems/edit/55103",
-    task: task2._id,
-    sprint: activeSprint._id,
-    stagePlan: plan6,
-    currentStageOrder: 2,
-    overallStatus: "in_progress",
+  // Story 3: Vault Auditing (Uses 6 stages)
+  const chosen6Stages = [0, 1, 2, 3, 4, 8].map(idx => stageDocs[idx]._id);
+  const story3 = await Story.create({
+    storyNumber: "55103",
+    taskName: "Refactor Vault Credentials Auditing",
+    description: "Clean up and rebuild credentials audit pipelines for secure hashicorp vault storage.",
+    plannedStartDate: getDateOffset(-6),
+    plannedEndDate: getDateOffset(6),
+    status: "in_progress",
+    stageOrder: chosen6Stages,
   });
 
-  for (const step of plan6) {
+  // Story 3 User Assignments
+  await StoryUser.create({ storyId: story3._id, userId: mainUser._id });
+  await StoryUser.create({ storyId: story3._id, userId: secondaryUser2._id });
+
+  for (let i = 0; i < chosen6Stages.length; i++) {
+    const stage = stageDocs[ [0, 1, 2, 3, 4, 8][i] ];
+    const order = i + 1;
     let status: "completed" | "in_progress" | "not_started" = "not_started";
     let actualStart, actualEnd;
-    if (step.order < 2) {
+    if (order < 2) {
       status = "completed";
       actualStart = getDateOffset(-6);
       actualEnd = getDateOffset(-5);
-    } else if (step.order === 2) {
+    } else if (order === 2) {
       status = "in_progress";
       actualStart = getDateOffset(-4);
     }
 
     await StoryStage.create({
-      story: story3._id,
-      stage: step.stage,
-      order: step.order,
-      plannedStartDate: getDateOffset(-7 + step.order * 2),
-      plannedEndDate: getDateOffset(-5 + step.order * 2),
+      storyId: story3._id,
+      stageId: stage._id,
+      stageOrder: order,
+      taskName: `#55103-${stage.name}`,
+      description: `Vault audit for ${stage.name}.`,
+      plannedStartDate: getDateOffset(-7 + order * 2),
+      plannedEndDate: getDateOffset(-5 + order * 2),
       actualStartDate: actualStart,
       actualEndDate: actualEnd,
+      developBy: mainUser._id,
+      githubPrLink: order === 1 ? "https://github.com/org/repo/pull/301" : undefined,
+      branchName: order === 1 ? "refactor/vault-audit-init" : undefined,
       status,
-      githubRepo: step.order === 2 ? "bajaj-finserv/vault-auditor" : undefined,
-      branchName: step.order === 2 ? "refactor/vault-audit" : undefined,
-      assignedTo: mainUser._id,
+      githubRepo: order === 1 ? "org/repo" : undefined,
+      prStatus: status === "completed" ? "merged" : "none",
+      implementationDescription: `Auditing for Stage ${order}.`,
     });
   }
 
-  // Story 4: Uses 6 stages (skips 6 and 7), currentStageOrder = 6 (Go Live)
-  const story4 = await UserStory.create({
-    title: "Implement Batch Transaction Webhooks",
-    adoStoryLink: "https://dev.azure.com/bajaj/tjt/_workitems/edit/55104",
-    task: task2._id,
-    sprint: activeSprint._id,
-    stagePlan: plan6,
-    currentStageOrder: 6,
-    overallStatus: "in_progress",
-  });
-
-  for (const step of plan6) {
-    let status: "completed" | "in_progress" | "not_started" = "not_started";
-    let actualStart, actualEnd;
-    if (step.order < 6) {
-      status = "completed";
-      actualStart = getDateOffset(-8 + step.order);
-      actualEnd = getDateOffset(-7 + step.order);
-    } else if (step.order === 6) {
-      status = "in_progress";
-      actualStart = getDateOffset(-1);
-    }
-
-    await StoryStage.create({
-      story: story4._id,
-      stage: step.stage,
-      order: step.order,
-      plannedStartDate: getDateOffset(-9 + step.order),
-      plannedEndDate: getDateOffset(-8 + step.order),
-      actualStartDate: actualStart,
-      actualEndDate: actualEnd,
-      status,
-      assignedTo: secondaryUser2._id,
-    });
-  }
-
-  // Story 5: Uses just 4 stages (Partner Discussion, Development, IT UAT, Go Live)
-  // Stage index mapping: 0, 1, 3, 8
-  const chosen4Indices = [0, 1, 3, 8];
-  const plan4 = chosen4Indices.map((idx, orderIdx) => ({
-    stage: stageDocs[idx]._id as mongoose.Types.ObjectId,
-    order: orderIdx + 1,
-  }));
-
-  const story5 = await UserStory.create({
-    title: "Fast-track Security Signature Validation",
-    adoStoryLink: "https://dev.azure.com/bajaj/tjt/_workitems/edit/55105",
-    task: task2._id,
-    sprint: activeSprint._id,
-    stagePlan: plan4,
-    currentStageOrder: 1,
-    overallStatus: "in_progress",
-  });
-
-  for (const step of plan4) {
-    let status: "completed" | "in_progress" | "not_started" = "not_started";
-    let actualStart;
-    if (step.order === 1) {
-      status = "in_progress";
-      actualStart = getDateOffset(-2);
-    }
-
-    await StoryStage.create({
-      story: story5._id,
-      stage: step.stage,
-      order: step.order,
-      plannedStartDate: getDateOffset(-3 + step.order * 2),
-      plannedEndDate: getDateOffset(-1 + step.order * 2),
-      actualStartDate: actualStart,
-      status,
-      assignedTo: mainUser._id,
-    });
-  }
-
-  console.log("Seeded 5 dynamic UserStories with mapped StoryStages.");
+  console.log("Seeded 3 Parent Stories with mapped StoryUsers and StoryStages.");
   console.log("=========================================");
   console.log("DATABASE SEED COMPLETED SUCCESSFULLY!");
   console.log(`- Seeded Users: ${await User.countDocuments()}`);
   console.log(`- Seeded StageDefinitions: ${await StageDefinition.countDocuments()}`);
-  console.log(`- Seeded Sprints: ${await Sprint.countDocuments()}`);
-  console.log(`- Seeded Tasks: ${await Task.countDocuments()}`);
-  console.log(`- Seeded UserStories: ${await UserStory.countDocuments()}`);
+  console.log(`- Seeded Stories: ${await Story.countDocuments()}`);
+  console.log(`- Seeded StoryUsers: ${await StoryUser.countDocuments()}`);
   console.log(`- Seeded StoryStages: ${await StoryStage.countDocuments()}`);
   console.log("=========================================");
   console.log("LOGIN CREDENTIALS:");

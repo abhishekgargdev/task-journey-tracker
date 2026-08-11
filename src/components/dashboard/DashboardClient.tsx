@@ -1,692 +1,585 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Cell,
-  PieChart,
-  Pie,
-  Legend,
-} from "recharts";
 import {
   Layers,
-  PlayCircle,
+  Clock,
   AlertTriangle,
   CheckCircle2,
-  Clock,
   Search,
   ExternalLink,
-  Loader2,
   Calendar,
-  AlertCircle,
-  HelpCircle,
   ArrowRight,
-  Milestone,
-  BookOpen,
+  GitBranch,
+  GitPullRequest,
+  Check,
+  User as UserIcon,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import EmptyState from "@/components/shared/EmptyState";
-import SprintStatusBadge from "@/components/shared/SprintStatusBadge";
-import AnimatedCard from "@/components/shared/AnimatedCard";
-import StaggerGrid from "@/components/shared/StaggerGrid";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { toast } from "@/components/ui/toast";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { getStageColorConfig } from "@/lib/stage-colors";
 
-// Types
-interface TaskItem {
-  _id: string;
-  title: string;
-}
-
-interface SprintItem {
+interface DbUser {
   _id: string;
   name: string;
-  startDate: string;
-  endDate: string;
-  status: "active" | "hold" | "completed";
-  holdHistory: any[];
+  email: string;
+  status: string;
 }
 
 interface StageDefinition {
   _id: string;
   name: string;
   colorTag: string;
-  defaultOrder?: number;
-}
-
-interface StagePlanEntry {
-  stage: StageDefinition;
-  order: number;
-}
-
-interface UserItem {
-  _id: string;
-  name: string;
-  email: string;
-}
-
-interface StoryItem {
-  _id: string;
-  title: string;
-  adoStoryLink?: string;
-  task: TaskItem;
-  sprint: SprintItem;
-  stagePlan: StagePlanEntry[];
-  currentStageOrder: number;
-  overallStatus: "not_started" | "in_progress" | "blocked" | "on_hold" | "completed";
-  isOnHold: boolean;
-  holdReason?: string;
 }
 
 interface StoryStage {
   _id: string;
-  story: string;
-  stage: string;
-  order: number;
+  storyId: string;
+  stageId: StageDefinition;
+  stageOrder: number;
+  taskName: string;
+  description?: string;
+  plannedStartDate?: string;
   plannedEndDate?: string;
+  actualStartDate?: string;
   actualEndDate?: string;
-  status: string;
-  assignedTo?: UserItem;
+  status: "not_started" | "in_progress" | "blocked" | "completed" | "delayed";
+  developBy?: DbUser;
+  githubPrLink?: string;
+  branchName?: string;
+  prStatus?: "none" | "pending" | "merged";
+}
+
+interface StoryItem {
+  _id: string;
+  storyNumber: string;
+  taskName: string;
+  description?: string;
+  plannedStartDate: string;
+  plannedEndDate: string;
+  actualStartDate?: string;
+  actualEndDate?: string;
+  status: "not_started" | "in_progress" | "blocked" | "completed" | "delayed";
+  stageOrder: StageDefinition[];
+  assignedUsers: DbUser[];
+  childStages: StoryStage[];
 }
 
 interface DashboardClientProps {
   stories: StoryItem[];
-  sprints: SprintItem[];
   storyStages: StoryStage[];
+  developers: DbUser[];
   userName: string;
 }
 
-// Premium animated count-up
-function CountUp({ value }: { value: number }) {
-  const [count, setCount] = useState(0);
-
-  useEffect(() => {
-    if (value === 0) {
-      setCount(0);
-      return;
-    }
-    let start = 0;
-    const duration = 600; // ms
-    const increment = value / (duration / 16);
-    const timer = setInterval(() => {
-      start += increment;
-      if (start >= value) {
-        setCount(value);
-        clearInterval(timer);
-      } else {
-        setCount(Math.floor(start));
-      }
-    }, 16);
-    return () => clearInterval(timer);
-  }, [value]);
-
-  return <span>{count}</span>;
-}
-
-export default function DashboardClient({ stories, sprints, storyStages, userName }: DashboardClientProps) {
-  const router = useRouter();
-
-  // Search/Filter State
+export default function DashboardClient({
+  stories,
+  storyStages,
+  developers,
+  userName,
+}: DashboardClientProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterTask, setFilterTask] = useState("all");
+  const [filterDeveloper, setFilterDeveloper] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
 
-  // Hold dialog controls for quick Sprint block
-  const [sprintHoldOpen, setSprintHoldOpen] = useState(false);
-  const [targetSprintId, setTargetSprintId] = useState<string | null>(null);
-  const [sprintHoldReason, setSprintHoldReason] = useState("");
-  const [sprintHoldLoading, setSprintHoldLoading] = useState(false);
-
-  // 1. Calculations for KPIs
   const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  const oneWeekLater = new Date(todayStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  // 1. Overall Metrics
+  const totalMainStories = stories.length;
+  const totalChildStories = storyStages.length;
   
-  // Total Active Stories (overallStatus is not completed)
-  const activeStories = stories.filter(s => s.overallStatus !== "completed");
-  const totalActive = activeStories.length;
-
-  // On Hold
-  const totalOnHold = stories.filter(s => s.isOnHold || s.overallStatus === "on_hold").length;
-
-  // Completed in current active sprint(s)
-  const activeSprintIds = new Set(sprints.map(sp => sp._id));
-  const totalCompleted = stories.filter(s => 
-    s.overallStatus === "completed" && s.sprint && activeSprintIds.has(s.sprint._id)
-  ).length;
-
-  // Blocked / Overdue: active stage plannedEndDate has passed but not completed
-  let totalOverdue = 0;
-  stories.forEach((story) => {
-    if (story.overallStatus === "completed") return;
-    const activePlanEntry = story.stagePlan.find(sp => sp.order === story.currentStageOrder);
-    if (!activePlanEntry) return;
-
-    const matchedStageDoc = storyStages.find(ss => 
-      ss.story === story._id && ss.stage === activePlanEntry.stage._id
-    );
-
-    if (matchedStageDoc && !matchedStageDoc.actualEndDate) {
-      if (matchedStageDoc.plannedEndDate && new Date(matchedStageDoc.plannedEndDate) < now) {
-        totalOverdue++;
-      }
-    }
-  });
-
-  // 2. Aggregate Stories by current Stage for Horizontal Bar Chart
-  const stageCountsMap: Record<string, { name: string; count: number; order: number }> = {};
-  stories.forEach((story) => {
-    if (story.overallStatus === "completed") return;
-    const activePlanEntry = story.stagePlan.find(sp => sp.order === story.currentStageOrder);
-    if (!activePlanEntry || !activePlanEntry.stage) return;
-    
-    const stageId = activePlanEntry.stage._id;
-    const name = activePlanEntry.stage.name;
-    const order = activePlanEntry.stage.defaultOrder ?? 99;
-
-    if (!stageCountsMap[stageId]) {
-      stageCountsMap[stageId] = { name, count: 0, order };
-    }
-    stageCountsMap[stageId].count++;
-  });
-
-  const barChartData = Object.values(stageCountsMap).sort((a, b) => a.order - b.order);
-
-  // 3. Status breakdown count for Donut Chart
   const statusCounts = {
-    not_started: 0,
-    in_progress: 0,
-    blocked: 0,
-    on_hold: 0,
+    not_started: stories.filter((s) => s.status === "not_started").length,
+    in_progress: stories.filter((s) => s.status === "in_progress").length,
+    completed: stories.filter((s) => s.status === "completed").length,
+    blocked: stories.filter((s) => s.status === "blocked").length,
+    delayed: stories.filter((s) => s.status === "delayed").length,
   };
 
-  activeStories.forEach((story) => {
-    const status = story.overallStatus;
-    if (status === "not_started") statusCounts.not_started++;
-    else if (status === "in_progress") statusCounts.in_progress++;
-    else if (status === "blocked") statusCounts.blocked++;
-    else if (status === "on_hold") statusCounts.on_hold++;
+  // 2. Date Tracking Metrics
+  let dueTodayCount = 0;
+  let dueThisWeekCount = 0;
+  let overdueCount = 0;
+  let upcomingCount = 0;
+
+  stories.forEach((story) => {
+    if (story.status === "completed") return;
+
+    const plannedEnd = new Date(story.plannedEndDate);
+
+    if (plannedEnd >= todayStart && plannedEnd <= todayEnd) {
+      dueTodayCount++;
+    }
+    if (plannedEnd > todayEnd && plannedEnd <= oneWeekLater) {
+      dueThisWeekCount++;
+    }
+    if (plannedEnd < todayStart) {
+      overdueCount++;
+    }
+    if (plannedEnd > todayEnd) {
+      upcomingCount++;
+    }
   });
 
-  const donutChartData = [
-    { name: "Not Started", value: statusCounts.not_started, color: "#64748b" }, // slate
-    { name: "In Progress", value: statusCounts.in_progress, color: "#3b82f6" }, // blue
-    { name: "Blocked", value: statusCounts.blocked, color: "#f43f5e" }, // rose/red
-    { name: "On Hold", value: statusCounts.on_hold, color: "#f59e0b" }, // amber
-  ].filter(d => d.value > 0); // only show populated slices
+  // 3. Stage-wise Progress Tracking
+  // Group child stages and compute completion %
+  const stageStatsMap = new Map<string, { name: string; colorTag: string; total: number; completed: number }>();
+  storyStages.forEach((cs) => {
+    if (!cs.stageId) return;
+    const stageId = cs.stageId._id;
+    const existing = stageStatsMap.get(stageId) || {
+      name: cs.stageId.name,
+      colorTag: cs.stageId.colorTag,
+      total: 0,
+      completed: 0,
+    };
 
-  // Quick action hold toggle on Sprint level
-  const handleSprintHoldToggle = async (sprint: SprintItem) => {
-    if (sprint.status === "hold") {
-      // Resume
-      try {
-        setSprintHoldLoading(true);
-        const res = await fetch(`/api/sprints/${sprint._id}/resume`, { method: "POST" });
-        if (!res.ok) throw new Error("Failed to resume sprint.");
-        toast.add({
-          title: "Sprint resumed",
-          description: `Sprint "${sprint.name}" is now active.`,
-          type: "success",
-        });
-        router.refresh();
-      } catch (err: any) {
-        alert(err.message);
-      } finally {
-        setSprintHoldLoading(false);
-      }
-    } else {
-      // Open dialog
-      setTargetSprintId(sprint._id);
-      setSprintHoldReason("");
-      setSprintHoldOpen(true);
+    existing.total++;
+    if (cs.status === "completed") {
+      existing.completed++;
     }
-  };
+    stageStatsMap.set(stageId, existing);
+  });
 
-  const submitSprintHold = async () => {
-    if (!targetSprintId) return;
-    try {
-      setSprintHoldLoading(true);
-      const res = await fetch(`/api/sprints/${targetSprintId}/hold`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: sprintHoldReason }),
-      });
+  const stageProgressList = Array.from(stageStatsMap.values()).map((stat) => ({
+    name: stat.name,
+    colorTag: stat.colorTag,
+    percentage: stat.total > 0 ? Math.round((stat.completed / stat.total) * 100) : 0,
+  }));
 
-      if (!res.ok) throw new Error("Failed to hold sprint.");
+  // 4. Developer Workloads
+  const developerWorkloads = developers.map((dev) => {
+    const assignedStoriesCount = stories.filter((s) =>
+      s.assignedUsers.some((u) => u._id === dev._id)
+    ).length;
 
-      toast.add({
-        title: "Sprint placed on hold",
-        description: "Target sprint is now suspended.",
-        type: "warning",
-      });
+    const devStages = storyStages.filter((cs) => cs.developBy?._id === dev._id);
 
-      setSprintHoldOpen(false);
-      router.refresh();
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setSprintHoldLoading(false);
-    }
-  };
-
-  // 4. Calculate Sprint Details
-  const getSprintDetails = (sprint: SprintItem) => {
-    const end = new Date(sprint.endDate);
-    const diff = end.getTime() - now.getTime();
-    const daysRemaining = Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
-    const storyCount = stories.filter(s => s.sprint?._id === sprint._id).length;
-    return { daysRemaining, storyCount };
-  };
-
-  // Helper to extract story current stage info
-  const getStoryStageDetails = (story: StoryItem) => {
-    const currentEntry = story.stagePlan.find(sp => sp.order === story.currentStageOrder);
-    const name = currentEntry?.stage?.name || (story.overallStatus === "completed" ? "Go Live / Completed" : "Completed");
+    const inProgressStages = devStages.filter((s) => s.status === "in_progress" || s.status === "delayed").length;
+    const completedStages = devStages.filter((s) => s.status === "completed").length;
     
-    // Find assignee for this stage
-    const matchedStageDoc = storyStages.find(ss => 
-      ss.story === story._id && ss.stage === currentEntry?.stage?._id
-    );
-    const assignee = matchedStageDoc?.assignedTo;
+    const overdueStages = devStages.filter((s) => {
+      if (s.status === "completed") return false;
+      return s.plannedEndDate && new Date(s.plannedEndDate) < todayStart;
+    }).length;
 
-    const total = story.stagePlan.length;
-    const completed = story.overallStatus === "completed" ? total : Math.max(0, story.currentStageOrder - 1);
-
-    return { name, total, completed, assignee };
-  };
-
-  // Filter tasks list for dropdown
-  const uniqueTasksMap = new Map();
-  stories.forEach(s => {
-    if (s.task) uniqueTasksMap.set(s.task._id, s.task.title);
+    return {
+      developer: dev.name,
+      assignedStories: assignedStoriesCount,
+      inProgress: inProgressStages,
+      completed: completedStages,
+      overdue: overdueStages,
+    };
   });
-  const taskOptions = Array.from(uniqueTasksMap.entries()).map(([id, title]) => ({ id, title }));
 
-  // 5. Client side filter stories grid
+  // Client-side Filtering for Board List
   const filteredStories = stories.filter((story) => {
-    const matchesSearch = story.title.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesTask = filterTask === "all" || story.task?._id === filterTask;
-    return matchesSearch && matchesTask;
+    const matchesSearch =
+      story.storyNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      story.taskName.toLowerCase().includes(searchQuery.toLowerCase());
+
+    const matchesStatus =
+      filterStatus === "all" || story.status === filterStatus;
+
+    let matchesDeveloper = true;
+    if (filterDeveloper !== "all") {
+      const isParentAssignee = story.assignedUsers.some((u) => u._id === filterDeveloper);
+      const isStageAssignee = story.childStages.some((cs) => cs.developBy?._id === filterDeveloper);
+      matchesDeveloper = isParentAssignee || isStageAssignee;
+    }
+
+    return matchesSearch && matchesStatus && matchesDeveloper;
   });
+
+  const getStoryProgressPct = (story: StoryItem) => {
+    const total = story.childStages.length;
+    const completed = story.childStages.filter((cs) => cs.status === "completed").length;
+    return total > 0 ? Math.round((completed / total) * 100) : 0;
+  };
 
   return (
-    <div className="space-y-6 min-w-0">
+    <div className="space-y-6">
       {/* Welcome Banner */}
       <div className="rounded-xl border border-primary/10 bg-gradient-to-r from-primary/5 via-primary/10 to-transparent p-6 shadow-sm">
         <h2 className="text-xl font-bold text-foreground sm:text-2xl font-sans">
           Welcome back, {userName}!
         </h2>
-        <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
-          Here is your delivery journey workspace overview across active sprints and customizable pipeline catalogs.
+        <p className="mt-1 text-xs sm:text-sm text-muted-foreground max-w-2xl leading-relaxed">
+          Track active parent development items, calculate deadline compliance, and oversee developer stage assignments.
         </p>
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* KPI: Active Stories */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card className="shadow-sm border-border bg-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Active Stories</CardTitle>
+            <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Stories</CardTitle>
             <Layers className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold font-sans">
-              <CountUp value={totalActive} />
+            <div className="text-2xl font-bold font-sans text-foreground">
+              {totalMainStories}
             </div>
-            <p className="text-[11px] text-muted-foreground mt-1">Currently moving in pipelines</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Total Parent Stories</p>
           </CardContent>
         </Card>
 
-        {/* KPI: Hold Stories */}
         <Card className="shadow-sm border-border bg-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Blocked / On Hold</CardTitle>
-            <Clock className="h-4 w-4 text-amber-500" />
+            <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">In Progress</CardTitle>
+            <Clock className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold font-sans text-amber-600">
-              <CountUp value={totalOnHold} />
+            <div className="text-2xl font-bold font-sans text-blue-600">
+              {statusCounts.in_progress}
             </div>
-            <p className="text-[11px] text-muted-foreground mt-1">Awaiting blocker resolutions</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Currently developing</p>
           </CardContent>
         </Card>
 
-        {/* KPI: Blocked / Overdue */}
         <Card className="shadow-sm border-border bg-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Overdue Stages</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-rose-500" />
+            <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Blocked</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-rose-500 animate-bounce" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold font-sans text-rose-600">
-              <CountUp value={totalOverdue} />
+              {statusCounts.blocked}
             </div>
-            <p className="text-[11px] text-muted-foreground mt-1">Target dates has passed</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Awaiting resolution</p>
           </CardContent>
         </Card>
 
-        {/* KPI: Completed Stories */}
         <Card className="shadow-sm border-border bg-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Sprint Completed</CardTitle>
+            <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Delayed</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-amber-500 animate-pulse" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold font-sans text-amber-600">
+              {statusCounts.delayed}
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1">Timeline exceeded</p>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm border-border bg-card">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Completed</CardTitle>
             <CheckCircle2 className="h-4 w-4 text-emerald-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold font-sans text-emerald-600">
-              <CountUp value={totalCompleted} />
+              {statusCounts.completed}
             </div>
-            <p className="text-[11px] text-muted-foreground mt-1">Shipped during this sprint</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Stories successfully closed</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Recharts Analytics Charts Grid */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 min-w-0">
-        {/* Horizontal Bar Chart: Stories by Stage */}
-        <Card className="lg:col-span-2 shadow-sm border-border bg-card">
-          <CardHeader>
-            <CardTitle className="text-sm font-bold tracking-tight">Active Stories by Delivery Stage</CardTitle>
-            <CardDescription>
-              Shows active stories sitting at their current pipeline stages.
-            </CardDescription>
+      {/* Date Tracking Section */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card className="border border-border bg-card shadow-sm text-center">
+          <CardHeader className="pb-1.5 pt-4">
+            <CardTitle className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground">Due Today</CardTitle>
           </CardHeader>
-          <CardContent className="h-[250px] pl-0">
-            {barChartData.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs italic">
-                No stories currently active in the delivery stages.
-              </div>
+          <CardContent className="pb-4">
+            <div className="text-2xl font-bold text-foreground">{dueTodayCount}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border border-border bg-card shadow-sm text-center">
+          <CardHeader className="pb-1.5 pt-4">
+            <CardTitle className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground">Due This Week</CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <div className="text-2xl font-bold text-foreground">{dueThisWeekCount}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border border-border bg-card shadow-sm text-center border-rose-100 bg-rose-50/5">
+          <CardHeader className="pb-1.5 pt-4">
+            <CardTitle className="text-[9px] uppercase tracking-wider font-bold text-rose-600">Overdue Stories</CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <div className="text-2xl font-bold text-rose-600">{overdueCount}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border border-border bg-card shadow-sm text-center">
+          <CardHeader className="pb-1.5 pt-4">
+            <CardTitle className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground">Upcoming Work</CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <div className="text-2xl font-bold text-foreground">{upcomingCount}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Middle Grid: Stage Tracking & Developer Workloads */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Stage-wise Progress */}
+        <Card className="border border-border shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-sm font-bold">Stage-wise Progress</CardTitle>
+            <CardDescription className="text-xs">Completion percentages computed across all active stages in child stories.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {stageProgressList.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic text-center py-6">No stages active in any story</p>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={barChartData}
-                  layout="vertical"
-                  margin={{ top: 10, right: 30, left: 20, bottom: 5 }}
-                >
-                  <XAxis type="number" allowDecimals={false} stroke="#888888" fontSize={11} />
-                  <YAxis dataKey="name" type="category" stroke="#888888" fontSize={11} width={130} />
-                  <Tooltip
-                    contentStyle={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "12px" }}
-                  />
-                  <Bar dataKey="count" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={16}>
-                    {barChartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill="#3b82f6" opacity={0.85} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              stageProgressList.map((stat) => {
+                const colors = getStageColorConfig(stat.colorTag);
+                return (
+                  <div key={stat.name} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs font-semibold text-foreground">
+                      <span className="flex items-center gap-1.5">
+                        <span className={cn("h-2.5 w-2.5 rounded-full", colors.dot)} />
+                        {stat.name}
+                      </span>
+                      <span>{stat.percentage}%</span>
+                    </div>
+                    <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                      <div
+                        className={cn("h-full transition-all duration-500", colors.bg)}
+                        style={{ width: `${stat.percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })
             )}
           </CardContent>
         </Card>
 
-        {/* Pie/Donut Chart: Status Breakdown */}
-        <Card className="shadow-sm border-border bg-card flex flex-col">
+        {/* Developer Workload */}
+        <Card className="border border-border shadow-sm overflow-hidden">
           <CardHeader>
-            <CardTitle className="text-sm font-bold tracking-tight">Status Breakdown</CardTitle>
-            <CardDescription>
-              Aesthetic summary across all active stories.
-            </CardDescription>
+            <CardTitle className="text-sm font-bold">Developer Workload Directory</CardTitle>
+            <CardDescription className="text-xs">Story assignment and active child stages workloads.</CardDescription>
           </CardHeader>
-          <CardContent className="h-[180px] flex-1">
-            {donutChartData.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs italic">
-                No active stories to categorize.
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={donutChartData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={45}
-                    outerRadius={65}
-                    paddingAngle={3}
-                    dataKey="value"
-                  >
-                    {donutChartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "12px" }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse" aria-label="Developer workloads">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <th className="py-2.5 px-4">Developer</th>
+                    <th className="py-2.5 px-4 text-center">Assigned Stories</th>
+                    <th className="py-2.5 px-4 text-center">Stages Active</th>
+                    <th className="py-2.5 px-4 text-center">Completed</th>
+                    <th className="py-2.5 px-4 text-center text-rose-600">Overdue Stages</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {developerWorkloads.map((wl) => (
+                    <tr key={wl.developer} className="hover:bg-accent/20 transition-colors">
+                      <td className="py-2.5 px-4 font-semibold text-foreground flex items-center gap-2">
+                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary text-[9px] font-bold">
+                          {wl.developer.split(" ").map(n => n[0]).join("")}
+                        </div>
+                        {wl.developer}
+                      </td>
+                      <td className="py-2.5 px-4 text-center text-foreground font-semibold">{wl.assignedStories}</td>
+                      <td className="py-2.5 px-4 text-center text-blue-600 font-semibold">{wl.inProgress}</td>
+                      <td className="py-2.5 px-4 text-center text-emerald-600 font-semibold">{wl.completed}</td>
+                      <td className={cn(
+                        "py-2.5 px-4 text-center font-bold",
+                        wl.overdue > 0 ? "text-rose-600 bg-rose-50/10" : "text-muted-foreground/60"
+                      )}>{wl.overdue}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </CardContent>
-          {donutChartData.length > 0 && (
-            <CardFooter className="pt-0 pb-4 flex flex-wrap justify-center gap-x-4 gap-y-1.5 text-[10px] font-semibold uppercase text-muted-foreground border-none">
-              {donutChartData.map((d) => (
-                <div key={d.name} className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: d.color }} />
-                  <span>{d.name}: {d.value}</span>
-                </div>
-              ))}
-            </CardFooter>
-          )}
         </Card>
       </div>
 
-      {/* Sprints Overview Section */}
-      <div className="space-y-4">
-        <h3 className="text-base font-bold font-sans text-foreground">Sprint Overview</h3>
-        {sprints.length === 0 ? (
-          <EmptyState
-            icon={Milestone}
-            title="No sprints yet"
-            description="Create a sprint to organize user stories into time-boxed delivery windows."
-            action={
-              <Button size="sm" render={<Link href="/sprints" />} className="cursor-pointer">
-                Go to Sprints
-              </Button>
-            }
-          />
-        ) : (
-          <StaggerGrid className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {sprints.map((sprint) => {
-              const details = getSprintDetails(sprint);
-              return (
-                <AnimatedCard key={sprint._id}>
-                <Card className="shadow-sm border-border bg-card flex flex-col justify-between h-full">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <CardTitle className="text-sm font-bold text-foreground line-clamp-1">{sprint.name}</CardTitle>
-                      <SprintStatusBadge status={sprint.status} />
-                    </div>
-                    <CardDescription className="text-[11px] flex items-center gap-1.5 pt-0.5">
-                      <Calendar className="h-3 w-3" />
-                      {new Date(sprint.startDate).toLocaleDateString()} to {new Date(sprint.endDate).toLocaleDateString()}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="pb-3 pt-1 text-xs text-muted-foreground grid grid-cols-2 gap-4">
-                    <div className="space-y-0.5">
-                      <span className="text-[9px] uppercase font-bold text-muted-foreground/60 tracking-wider">Days Left</span>
-                      <p className="font-semibold text-foreground text-sm">{details.daysRemaining} days remaining</p>
-                    </div>
-                    <div className="space-y-0.5">
-                      <span className="text-[9px] uppercase font-bold text-muted-foreground/60 tracking-wider">Linked Stories</span>
-                      <p className="font-semibold text-foreground text-sm">{details.storyCount} stories</p>
-                    </div>
-                  </CardContent>
-                  <CardFooter className="pt-2 border-t border-border flex justify-end">
-                    <Button
-                      variant={sprint.status === "hold" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => handleSprintHoldToggle(sprint)}
-                      className="text-xs h-8 cursor-pointer"
-                    >
-                      {sprint.status === "hold" ? "Resume Sprint" : "Place on Hold"}
-                    </Button>
-                  </CardFooter>
-                </Card>
-                </AnimatedCard>
-              );
-            })}
-          </StaggerGrid>
-        )}
-      </div>
-
-      {/* Individual Story Tracker Grid */}
-      <div className="space-y-4">
+      {/* Stories Progress Board */}
+      <div className="space-y-4 pt-2">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <h3 className="text-base font-bold font-sans text-foreground">Individual Story Tracker</h3>
-          
+          <div className="space-y-0.5">
+            <h3 className="text-sm font-bold text-foreground uppercase tracking-wider">Stories Pipeline Board</h3>
+            <p className="text-xs text-muted-foreground">Verify pipeline sequence stages, branches, and code pull requests.</p>
+          </div>
+
           <div className="flex items-center gap-2 flex-wrap shrink-0">
-            {/* Filter Search Input */}
+            {/* Search */}
             <div className="relative w-full sm:w-[220px]">
-              <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="Search stories..."
+                placeholder="Search by story name or number..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 bg-card h-8 text-xs w-full"
+                className="pl-8.5 bg-card h-8.5 text-xs w-full"
               />
             </div>
 
-            {/* Filter Task Dropdown */}
+            {/* Developer Filter */}
             <select
-              value={filterTask}
-              onChange={(e) => setFilterTask(e.target.value)}
-              className="flex h-8 w-full sm:w-[150px] rounded-md border border-input bg-card px-2 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              value={filterDeveloper}
+              onChange={(e) => setFilterDeveloper(e.target.value)}
+              className="flex h-8.5 w-full sm:w-[150px] rounded-md border border-input bg-card px-2 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
-              <option value="all">All Tasks</option>
-              {taskOptions.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.title}
+              <option value="all">All Developers</option>
+              {developers.map((d) => (
+                <option key={d._id} value={d._id}>
+                  {d.name}
                 </option>
               ))}
+            </select>
+
+            {/* Status Filter */}
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="flex h-8.5 w-full sm:w-[130px] rounded-md border border-input bg-card px-2 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <option value="all">All Statuses</option>
+              <option value="not_started">Not Started</option>
+              <option value="in_progress">In Progress</option>
+              <option value="blocked">Blocked</option>
+              <option value="completed">Completed</option>
+              <option value="delayed">Delayed</option>
             </select>
           </div>
         </div>
 
         {filteredStories.length === 0 ? (
           <EmptyState
-            icon={BookOpen}
-            title="No stories match"
-            description="No user stories match the current filters or search. Try adjusting your search or task filter."
+            icon={Layers}
+            title="No matching stories found"
+            description="Adjust filters to retrieve active developmental items."
           />
         ) : (
-          <StaggerGrid className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredStories.map((story) => {
-              const details = getStoryStageDetails(story);
-              const progressPct = details.total > 0 ? (details.completed / details.total) * 100 : 0;
-              return (
-                <AnimatedCard key={story._id}>
-                <Card className="shadow-sm border-border bg-card hover:border-primary/20 transition-colors flex flex-col justify-between h-full">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between gap-3">
-                      <CardTitle className="text-sm font-bold text-foreground hover:text-primary transition-colors">
-                        <Link href={`/stories/${story._id}`}>
-                          {story.title}
-                        </Link>
-                      </CardTitle>
-                      {story.isOnHold && (
-                        <Badge className="bg-amber-500/10 text-amber-600 border-none text-[8px] font-bold shrink-0 py-0.5 px-1 flex items-center gap-0.5">
-                          <Clock className="h-2 w-2" />
-                          HOLD
-                        </Badge>
-                      )}
-                    </div>
-                    <CardDescription className="text-[10px] flex items-center gap-1.5">
-                      <span>Task: <Link href={`/tasks/${story.task?._id}`} className="text-primary hover:underline">{story.task?.title}</Link></span>
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="pb-3 pt-1 space-y-3">
-                    {/* Stage Badge & Assignee Avatar */}
-                    <div className="flex items-center justify-between text-xs gap-3">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-[9px] uppercase font-bold text-muted-foreground/60 tracking-wider">Active Stage</span>
-                        <Badge className="bg-secondary text-secondary-foreground border-none text-[10px] py-0 px-2 rounded-full font-medium">
-                          {details.name}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary" title={details.assignee?.name || "Unassigned"}>
-                          {details.assignee?.name ? details.assignee.name.split(" ").map(n=>n[0]).join("") : "?"}
-                        </div>
-                        <span className="text-xs text-muted-foreground font-medium hidden sm:inline">{details.assignee?.name || "Unassigned"}</span>
-                      </div>
-                    </div>
+          <Card className="border border-border bg-card shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse" aria-label="Stories progress dashboard board">
+                <thead>
+                  <tr className="border-b border-border bg-muted/20 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <th className="py-3.5 px-4 w-[120px]">Story Number</th>
+                    <th className="py-3.5 px-4">Story Title</th>
+                    <th className="py-3.5 px-4">Active Stage</th>
+                    <th className="py-3.5 px-4">Stage Developer</th>
+                    <th className="py-3.5 px-4">Git Branch & PR</th>
+                    <th className="py-3.5 px-4 text-center w-[150px]">Stage Progress</th>
+                    <th className="py-3.5 px-4 text-right w-[100px]">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filteredStories.map((story) => {
+                    const progressPct = getStoryProgressPct(story);
+                    const activeStage = story.childStages.find((cs) => cs.status !== "completed");
+                    const activeStageName = activeStage?.stageId?.name || (story.status === "completed" ? "Go Live / Completed" : "Completed");
+                    const activeStageColor = activeStage?.stageId?.colorTag || "emerald";
+                    const activeStageDev = activeStage?.developBy?.name || "Unassigned";
 
-                    {/* Progress Bar */}
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-semibold text-muted-foreground">
-                        <span>Stages complete</span>
-                        <span>{details.completed}/{details.total}</span>
-                      </div>
-                      <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                        <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${progressPct}%` }} />
-                      </div>
-                    </div>
-                  </CardContent>
-                  <CardFooter className="pt-2 border-t border-border flex justify-end">
-                    <Button variant="outline" size="sm" render={<Link href={`/stories/${story._id}`} />} className="text-xs h-7 cursor-pointer">
-                      Track Journey
-                      <ArrowRight className="h-3 w-3 ml-1" />
-                    </Button>
-                  </CardFooter>
-                </Card>
-                </AnimatedCard>
-              );
-            })}
-          </StaggerGrid>
+                    return (
+                      <tr key={story._id} className="hover:bg-accent/40 transition-colors">
+                        <td className="py-3.5 px-4 font-mono font-bold text-foreground">
+                          <span className="bg-primary/5 text-primary text-[10px] px-2 py-0.5 rounded font-mono border border-primary/10">
+                            #{story.storyNumber}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 font-semibold text-foreground text-xs max-w-[200px] truncate" title={story.taskName}>
+                          {story.taskName}
+                        </td>
+                        <td className="py-3.5 px-4 font-medium">
+                          <div className="space-y-1">
+                            <Badge className="bg-secondary text-secondary-foreground border-none text-[10px] py-0 px-2 rounded-full font-medium">
+                              {activeStageName}
+                            </Badge>
+                            <div>
+                              <Badge className={cn(
+                                "border-none text-[8px] font-bold px-1.5 py-0.2",
+                                story.status === "completed" && "bg-emerald-500/10 text-emerald-600",
+                                story.status === "in_progress" && "bg-blue-500/10 text-blue-600 animate-pulse",
+                                story.status === "blocked" && "bg-rose-500/10 text-rose-600 animate-bounce",
+                                story.status === "delayed" && "bg-amber-500/10 text-amber-600",
+                                story.status === "not_started" && "bg-muted text-muted-foreground"
+                              )}>
+                                {story.status.toUpperCase().replace("_", " ")}
+                              </Badge>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 text-muted-foreground font-semibold">
+                          <div className="flex items-center gap-2">
+                            <div className="h-5.5 w-5.5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[9px] font-bold">
+                              {activeStageDev.split(" ").map(n=>n[0]).join("")}
+                            </div>
+                            <span className="text-xs text-foreground font-semibold">
+                              {activeStageDev}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 text-muted-foreground">
+                          {activeStage && (activeStage.branchName || activeStage.githubPrLink) ? (
+                            <div className="space-y-1">
+                              {activeStage.branchName && (
+                                <p className="font-mono text-[9px] text-foreground font-semibold inline-flex items-center gap-1">
+                                  <GitBranch className="h-3 w-3 text-muted-foreground" />
+                                  {activeStage.branchName}
+                                </p>
+                              )}
+                              {activeStage.githubPrLink && (
+                                <div>
+                                  <a
+                                    href={activeStage.githubPrLink}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-primary hover:underline text-[9px] inline-flex items-center gap-0.5"
+                                  >
+                                    <GitPullRequest className="h-3 w-3 text-muted-foreground" />
+                                    View PR
+                                  </a>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground/60 italic text-[10px]">No branch linked</span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="space-y-1 text-center">
+                            <span className="text-[10px] font-semibold text-foreground">
+                              {progressPct}% Completed
+                            </span>
+                            <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                              <div
+                                className={cn(
+                                  "h-full transition-all duration-500",
+                                  story.status === "completed" ? "bg-emerald-500" : story.status === "blocked" ? "bg-rose-500" : "bg-primary"
+                                )}
+                                style={{ width: `${progressPct}%` }}
+                              />
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <Button variant="outline" size="sm" className="h-7 text-[10px] cursor-pointer" render={<Link href={`/stories/${story._id}`} />}>
+                            Track Journey
+                            <ArrowRight className="h-3 w-3 ml-1" />
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
         )}
       </div>
-
-      {/* Place Sprint on Hold Dialog */}
-      <Dialog open={sprintHoldOpen} onOpenChange={setSprintHoldOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-amber-600">
-              <AlertTriangle className="h-5 w-5" />
-              Place Sprint On Hold
-            </DialogTitle>
-            <DialogDescription>
-              Provide an explanation of why this entire sprint planning backlog has been suspended.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-1">
-            <Label htmlFor="sprint-hold-reason">Hold Reason</Label>
-            <Input
-              id="sprint-hold-reason"
-              placeholder="e.g. Blocked by Environment Outage"
-              value={sprintHoldReason}
-              onChange={(e) => setSprintHoldReason(e.target.value)}
-              className="bg-card"
-            />
-          </div>
-          <DialogFooter className="pt-2" showCloseButton={true}>
-            <Button variant="outline" onClick={() => setSprintHoldOpen(false)} className="cursor-pointer">
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={submitSprintHold}
-              disabled={sprintHoldReason.trim().length < 2 || sprintHoldLoading}
-              className="cursor-pointer"
-            >
-              {sprintHoldLoading ? "Holding..." : "Block Sprint"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

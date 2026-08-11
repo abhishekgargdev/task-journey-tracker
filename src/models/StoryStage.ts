@@ -1,48 +1,65 @@
 import mongoose, { Schema, Document, Model } from "mongoose";
 
 export interface IStoryStage extends Document {
-  story: mongoose.Types.ObjectId;
-  stage: mongoose.Types.ObjectId;
-  order: number;
+  storyId: mongoose.Types.ObjectId;
+  stageId: mongoose.Types.ObjectId;
+  stageOrder: number;
+  taskName: string;
+  description?: string;
   plannedStartDate?: Date;
   plannedEndDate?: Date;
   actualStartDate?: Date;
   actualEndDate?: Date;
-  status: "not_started" | "in_progress" | "blocked" | "on_hold" | "completed";
-  githubRepo?: string;
+  developBy?: mongoose.Types.ObjectId;
+  githubPrLink?: string;
   branchName?: string;
-  prLink?: string;
-  assignedTo?: mongoose.Types.ObjectId;
-  notes?: string;
+  status: "not_started" | "in_progress" | "blocked" | "completed" | "delayed";
+  isArchived: boolean;
+  githubRepo?: string; // Preserve for UI integration
+  prStatus?: "none" | "pending" | "merged"; // Preserve for UI integration
+  notes?: string; // Preserve for UI integration
+  implementationDescription?: string; // Preserve for UI integration
+  adoStoryLink?: string; // Preserve for UI integration
   createdAt: Date;
   updatedAt: Date;
 }
 
 const StoryStageSchema = new Schema<IStoryStage>(
   {
-    story: { type: Schema.Types.ObjectId, ref: "UserStory", required: true },
-    stage: { type: Schema.Types.ObjectId, ref: "StageDefinition", required: true },
-    order: { type: Number, required: true },
+    storyId: { type: Schema.Types.ObjectId, ref: "Story", required: true },
+    stageId: { type: Schema.Types.ObjectId, ref: "StageDefinition", required: true },
+    stageOrder: { type: Number, required: true },
+    taskName: { type: String, required: true },
+    description: { type: String },
     plannedStartDate: { type: Date },
     plannedEndDate: { type: Date },
     actualStartDate: { type: Date },
     actualEndDate: { type: Date },
+    developBy: { type: Schema.Types.ObjectId, ref: "User" },
+    githubPrLink: { type: String },
+    branchName: { type: String },
     status: {
       type: String,
-      enum: ["not_started", "in_progress", "blocked", "on_hold", "completed"],
+      enum: ["not_started", "in_progress", "blocked", "completed", "delayed"],
       default: "not_started",
+      index: true,
     },
+    isArchived: { type: Boolean, default: false, index: true },
     githubRepo: { type: String },
-    branchName: { type: String },
-    prLink: { type: String },
-    assignedTo: { type: Schema.Types.ObjectId, ref: "User" },
+    prStatus: {
+      type: String,
+      enum: ["none", "pending", "merged"],
+      default: "none",
+    },
     notes: { type: String },
+    implementationDescription: { type: String },
+    adoStoryLink: { type: String },
   },
   { timestamps: true }
 );
 
-// Compound unique index so a user story can't have duplicate stages
-StoryStageSchema.index({ story: 1, stage: 1 }, { unique: true });
+// Compound unique index to prevent duplicate child stories for the same Story + Stage combination
+StoryStageSchema.index({ storyId: 1, stageId: 1 }, { unique: true });
 
 export const StoryStage: Model<IStoryStage> =
   mongoose.models.StoryStage || mongoose.model<IStoryStage>("StoryStage", StoryStageSchema);

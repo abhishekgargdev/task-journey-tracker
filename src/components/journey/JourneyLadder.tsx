@@ -28,16 +28,16 @@ import {
   HelpCircle,
   Clock,
   ExternalLink,
-  ChevronRight,
   Clipboard,
   Check,
-  Edit2,
   User,
   ArrowRight,
   Settings,
   GripVertical,
   Loader2,
-  Calendar,
+  Save,
+  GitBranch,
+  GitPullRequest
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -55,81 +55,66 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionContent,
+} from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 
 // Types
-interface TaskItem {
-  _id: string;
-  title: string;
-}
-
-interface SprintItem {
-  _id: string;
-  name: string;
-}
-
 interface StageDefinition {
   _id: string;
   name: string;
   colorTag: string;
 }
 
-interface StagePlanEntry {
-  stage: StageDefinition;
-  order: number;
-}
-
 interface UserItem {
   _id: string;
   name: string;
   email: string;
-}
-
-interface StoryHoldHistory {
-  reason: string;
-  heldAt: string;
-  resumedAt?: string;
-  heldBy: UserItem;
+  status: string;
 }
 
 interface UserStory {
   _id: string;
-  title: string;
-  adoStoryLink?: string;
-  task: TaskItem;
-  sprint: SprintItem;
-  stagePlan: StagePlanEntry[];
-  currentStageOrder: number;
-  overallStatus: "not_started" | "in_progress" | "blocked" | "on_hold" | "completed";
+  storyNumber: string;
+  taskName: string;
+  description?: string;
+  plannedStartDate: string;
+  plannedEndDate: string;
+  actualStartDate?: string;
+  actualEndDate?: string;
+  status: "not_started" | "in_progress" | "blocked" | "completed" | "delayed";
   isOnHold: boolean;
   holdReason?: string;
-  holdHistory: StoryHoldHistory[];
+  stageOrder: StageDefinition[];
+  assignedUsers: UserItem[];
 }
 
 interface StoryStage {
   _id: string;
-  story: string;
-  stage: string; // ID string
-  order: number;
+  storyId: string;
+  stageId: StageDefinition;
+  stageOrder: number;
+  taskName: string;
+  description?: string;
   plannedStartDate?: string;
   plannedEndDate?: string;
   actualStartDate?: string;
   actualEndDate?: string;
-  status: "not_started" | "in_progress" | "blocked" | "on_hold" | "completed";
+  status: "not_started" | "in_progress" | "blocked" | "completed" | "delayed";
   githubRepo?: string;
   branchName?: string;
-  prLink?: string;
-  assignedTo?: UserItem;
+  githubPrLink?: string;
+  prStatus?: "none" | "pending" | "merged";
+  developBy?: UserItem;
   notes?: string;
+  implementationDescription?: string;
+  adoStoryLink?: string;
 }
 
 interface JourneyLadderProps {
@@ -144,22 +129,21 @@ const stageEditSchema = z.object({
   plannedEndDate: z.string().or(z.literal("")),
   actualStartDate: z.string().or(z.literal("")),
   actualEndDate: z.string().or(z.literal("")),
-  status: z.enum(["not_started", "in_progress", "blocked", "on_hold", "completed"]),
+  status: z.enum(["not_started", "in_progress", "blocked", "completed", "delayed"]),
   githubRepo: z.string().optional(),
   branchName: z.string().optional(),
   prLink: z.string().url({ message: "Must be a valid URL." }).or(z.literal("")),
+  prStatus: z.enum(["none", "pending", "merged"]),
   assignedTo: z.string().optional(),
   notes: z.string().optional(),
+  implementationDescription: z.string().optional(),
+  adoStoryLink: z.string().optional(),
 });
 
 type StageEditFormValues = z.infer<typeof stageEditSchema>;
 
 export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadderProps) {
-  const [selectedStage, setSelectedStage] = useState<StoryStage | null>(null);
-  const [stageDetailsOpen, setStageDetailsOpen] = useState(false);
-  const [isEditingStage, setIsEditingStage] = useState(false);
-  const [users, setUsers] = useState<UserItem[]>([]);
-  const [copiedText, setCopiedText] = useState(false);
+  const [expandedItem, setExpandedItem] = useState<any>(undefined);
 
   // Dialog Controls
   const [holdOpen, setHoldOpen] = useState(false);
@@ -179,107 +163,11 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
     })
   );
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors, isSubmitting },
-  } = useForm<StageEditFormValues>({
-    resolver: zodResolver(stageEditSchema),
-  });
-
-  const fetchUsers = async () => {
-    try {
-      const res = await fetch("/api/users");
-      if (res.ok) {
-        const data = await res.json();
-        setUsers(data);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
   const handleNodeClick = (storyStage: StoryStage) => {
-    setSelectedStage(storyStage);
-    setIsEditingStage(false);
-    
-    // Format dates to YYYY-MM-DD for input fields
-    const formatDate = (dateStr?: string) => {
-      if (!dateStr) return "";
-      return new Date(dateStr).toISOString().split("T")[0];
-    };
-
-    reset({
-      plannedStartDate: formatDate(storyStage.plannedStartDate),
-      plannedEndDate: formatDate(storyStage.plannedEndDate),
-      actualStartDate: formatDate(storyStage.actualStartDate),
-      actualEndDate: formatDate(storyStage.actualEndDate),
-      status: storyStage.status,
-      githubRepo: storyStage.githubRepo || "",
-      branchName: storyStage.branchName || "",
-      prLink: storyStage.prLink || "",
-      assignedTo: storyStage.assignedTo?._id || "",
-      notes: storyStage.notes || "",
-    });
-
-    setStageDetailsOpen(true);
-  };
-
-  const handleCopyBranch = (branchName?: string) => {
-    if (!branchName) return;
-    navigator.clipboard.writeText(branchName);
-    setCopiedText(true);
-    setTimeout(() => setCopiedText(false), 2000);
-    toast.add({
-      title: "Copied",
-      description: "Branch name copied to clipboard.",
-      type: "success",
-    });
-  };
-
-  const handleStageEditSubmit = async (values: StageEditFormValues) => {
-    if (!selectedStage) return;
-    try {
-      const formatted = {
-        ...values,
-        plannedStartDate: values.plannedStartDate ? new Date(values.plannedStartDate).toISOString() : null,
-        plannedEndDate: values.plannedEndDate ? new Date(values.plannedEndDate).toISOString() : null,
-        actualStartDate: values.actualStartDate ? new Date(values.actualStartDate).toISOString() : null,
-        actualEndDate: values.actualEndDate ? new Date(values.actualEndDate).toISOString() : null,
-        assignedTo: values.assignedTo || null,
-      };
-
-      const res = await fetch(`/api/stories/${story._id}/stages/${selectedStage.stage}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formatted),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || "Failed to update stage details.");
-      }
-
-      toast.add({
-        title: "Stage details saved",
-        description: "Story stage has been updated.",
-        type: "success",
-      });
-
-      setStageDetailsOpen(false);
-      onRefresh();
-    } catch (err: any) {
-      console.error(err);
-      toast.add({
-        title: "Update failed",
-        description: err.message || "An error occurred.",
-        type: "error",
-      });
+    setExpandedItem(storyStage._id);
+    const accordionEl = document.getElementById(`accordion-item-${storyStage._id}`);
+    if (accordionEl) {
+      accordionEl.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   };
 
@@ -294,9 +182,6 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
         const errData = await res.json();
         throw new Error(errData.error || "Failed to advance story.");
       }
-
-      const nextStageEntry = story.stagePlan.find(sp => sp.order === story.currentStageOrder + 1);
-      const nextStageName = nextStageEntry?.stage?.name || "Go Live";
 
       toast.add({
         title: "Story advanced",
@@ -318,7 +203,7 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
   };
 
   const handleHoldToggle = async () => {
-    if (story.isOnHold) {
+    if (story.isOnHold || story.status === "blocked") {
       // Resume
       try {
         setHoldLoading(true);
@@ -380,10 +265,10 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
       const activeStages = await res.json();
 
       // Find story's existing stages status
-      const existingPlanIds = story.stagePlan.map((sp: any) => sp.stage._id);
+      const existingPlanIds = story.stageOrder.map((s: any) => s._id);
 
       const plannerList = activeStages.map((stage: any) => {
-        const matchedStage = stages.find((s: any) => s.stage === stage._id);
+        const matchedStage = stages.find((s: any) => s.stageId?._id === stage._id);
         const isChecked = existingPlanIds.includes(stage._id);
         const isStarted = matchedStage ? matchedStage.status !== "not_started" : false;
 
@@ -396,17 +281,10 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
         };
       });
 
-      // Sort: place completed/started stages at the top in their current stagePlan order
-      const startedInOrder = story.stagePlan
-        .filter((sp: any) => {
-          const matchedStage = stages.find((s: any) => s.stage === sp.stage._id);
-          return matchedStage ? matchedStage.status !== "not_started" : false;
-        })
-        .map((sp: any) => sp.stage._id);
-
+      // Sort: place completed/started stages at the top in their current stageOrder
       const sortedPlanner = [
-        ...plannerList.filter((s: any) => startedInOrder.includes(s._id)).sort((a: any, b: any) => startedInOrder.indexOf(a._id) - startedInOrder.indexOf(b._id)),
-        ...plannerList.filter((s: any) => !startedInOrder.includes(s._id)),
+        ...plannerList.filter((s: any) => existingPlanIds.includes(s._id)).sort((a: any, b: any) => existingPlanIds.indexOf(a._id) - existingPlanIds.indexOf(b._id)),
+        ...plannerList.filter((s: any) => !existingPlanIds.includes(s._id)),
       ];
 
       setPlannerStages(sortedPlanner);
@@ -505,8 +383,9 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
           labelColor: "text-rose-600 font-bold",
         };
       case "on_hold":
+      case "delayed":
         return {
-          bg: "bg-amber-500 border-amber-500 text-white shadow-amber-500/20 hold-stripes",
+          bg: "bg-amber-500 border-amber-500 text-white shadow-amber-500/20",
           icon: <Clock className="h-5 w-5" />,
           labelColor: "text-amber-600 font-semibold",
         };
@@ -519,55 +398,21 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
     }
   };
 
-  // Date delta badge calculator
-  const getDeltaBadge = (plannedStr?: string, actualStr?: string) => {
-    if (!plannedStr) return null;
-    const planned = new Date(plannedStr);
-    const actual = actualStr ? new Date(actualStr) : new Date();
-
-    // calculate difference in days
-    const diffTime = actual.getTime() - planned.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays > 0) {
-      return (
-        <Badge className="bg-rose-500/10 text-rose-600 border-none font-bold text-[10px]">
-          {diffDays} {diffDays === 1 ? "day" : "days"} late
-        </Badge>
-      );
-    } else if (diffDays < 0) {
-      const earlyDays = Math.abs(diffDays);
-      return (
-        <Badge className="bg-emerald-500/10 text-emerald-600 border-none font-bold text-[10px]">
-          {earlyDays} {earlyDays === 1 ? "day" : "days"} early
-        </Badge>
-      );
-    } else {
-      return (
-        <Badge className="bg-blue-500/10 text-blue-600 border-none font-bold text-[10px]">
-          On time
-        </Badge>
-      );
-    }
-  };
-
   // Math helper
-  const totalStagesCount = story.stagePlan.length;
-  const completedStagesCount = story.overallStatus === "completed" 
-    ? totalStagesCount 
-    : Math.max(0, story.currentStageOrder - 1);
+  const totalStagesCount = stages.length;
+  const completedStagesCount = stages.filter(s => s.status === "completed").length;
   const progressRatio = totalStagesCount > 1 
     ? (completedStagesCount / (totalStagesCount - 1)) * 100 
     : 100;
 
-  const nextStage = story.stagePlan.find(sp => sp.order === story.currentStageOrder);
-  const nextStageName = nextStage?.stage?.name || "Go Live";
+  const nextStage = stages.find(s => s.status !== "completed");
+  const nextStageName = nextStage?.stageId?.name || "Go Live";
 
   return (
     <div className="space-y-6">
       {/* Banner Hold Banner */}
       <AnimatePresence>
-        {story.isOnHold && (
+        {(story.isOnHold || story.status === "blocked") && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -601,11 +446,11 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
         <div className="space-y-1">
           <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Overall Progress</span>
           <div className="flex items-center gap-2">
-            <h3 className="text-lg font-bold text-foreground">
+            <h3 className="text-sm font-bold text-foreground sm:text-base">
               {completedStagesCount} of {totalStagesCount} stages complete
             </h3>
-            <Badge className="bg-primary/10 text-primary border-none font-bold py-0.5">
-              {Math.round((completedStagesCount / totalStagesCount) * 100)}%
+            <Badge className="bg-primary/10 text-primary border-none font-bold py-0.5 text-[10px]">
+              {totalStagesCount > 0 ? Math.round((completedStagesCount / totalStagesCount) * 100) : 0}%
             </Badge>
           </div>
         </div>
@@ -615,7 +460,7 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
             onClick={openPlanEditor}
             variant="outline"
             size="sm"
-            className="flex items-center gap-1.5 cursor-pointer"
+            className="flex items-center gap-1.5 cursor-pointer text-xs"
           >
             <Settings className="h-4 w-4" />
             Edit Stage Plan
@@ -623,18 +468,18 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
 
           <Button
             onClick={handleHoldToggle}
-            variant={story.isOnHold ? "default" : "outline"}
+            variant={story.status === "blocked" ? "default" : "outline"}
             size="sm"
-            className="cursor-pointer"
+            className="cursor-pointer text-xs"
           >
-            {story.isOnHold ? "Resume" : "Place on Hold"}
+            {story.status === "blocked" ? "Resume" : "Place on Hold"}
           </Button>
 
           <Button
             onClick={handleAdvance}
-            disabled={story.isOnHold || story.overallStatus === "completed" || advanceLoading}
+            disabled={story.status === "blocked" || story.status === "completed" || advanceLoading}
             size="sm"
-            className="flex items-center gap-1.5 cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90"
+            className="flex items-center gap-1.5 cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 text-xs"
           >
             {advanceLoading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -688,23 +533,15 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
           )}
 
           {/* Render Stepper Steps */}
-          {story.stagePlan.map((plan, index) => {
-            const stageDef = plan.stage;
+          {stages.map((stageVal, index) => {
+            const stageDef = stageVal.stageId;
+            if (!stageDef) return null;
             const stageColors = getStageColorConfig(stageDef.colorTag);
-            // Find corresponding StoryStage values
-            const stageVal = stages.find((s) => s.stage === stageDef._id) || {
-              status: "not_started",
-              plannedStartDate: "",
-              plannedEndDate: "",
-              actualStartDate: "",
-              actualEndDate: "",
-            } as StoryStage;
-
             const aes = getNodeAesthetics(stageVal.status);
 
             return (
               <motion.div
-                key={stageDef._id}
+                key={stageVal._id}
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: index * 0.1, type: "spring", stiffness: 200 }}
@@ -728,7 +565,6 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
                   <h4 className={cn("text-xs font-semibold tracking-tight transition-colors", aes.labelColor)}>
                     {stageDef.name}
                   </h4>
-                  {/* Subtle colorTag dot accent indicator */}
                   <div className="flex items-center justify-center gap-1">
                     <span className={cn("h-1.5 w-1.5 rounded-full", stageColors.dot)} />
                     <span className="text-[9px] uppercase font-bold text-muted-foreground/60">{stageDef.colorTag}</span>
@@ -742,197 +578,44 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
         </CardContent>
       </Card>
 
-      {/* Stage Details Popover Sheet */}
-      <Sheet open={stageDetailsOpen} onOpenChange={setStageDetailsOpen}>
-        <SheetContent className="sm:max-w-md overflow-y-auto">
-          <SheetHeader className="pb-3 border-b border-border">
-            <SheetTitle className="text-lg font-bold font-sans flex items-center gap-2">
-              {selectedStage ? story.stagePlan.find(sp => sp.stage._id === selectedStage.stage)?.stage?.name : "Stage Details"}
-            </SheetTitle>
-            <SheetDescription>
-              View planning sequences and commit links for this delivery stage.
-            </SheetDescription>
-          </SheetHeader>
-
-          {selectedStage && (
-            <div className="py-4 space-y-4">
-              {!isEditingStage ? (
-                // View Mode
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    {/* Planned dates */}
-                    <div className="rounded-lg border border-border p-3 space-y-1 bg-muted/10">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Planned Timeline</span>
-                      <p className="text-xs font-medium text-foreground">
-                        {selectedStage.plannedStartDate ? new Date(selectedStage.plannedStartDate).toLocaleDateString() : "--"} to{" "}
-                        {selectedStage.plannedEndDate ? new Date(selectedStage.plannedEndDate).toLocaleDateString() : "--"}
-                      </p>
-                    </div>
-
-                    {/* Actual dates */}
-                    <div className="rounded-lg border border-border p-3 space-y-1 bg-muted/10">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Actual Timeline</span>
-                        {getDeltaBadge(selectedStage.plannedEndDate, selectedStage.actualEndDate)}
-                      </div>
-                      <p className="text-xs font-medium text-foreground">
-                        {selectedStage.actualStartDate ? new Date(selectedStage.actualStartDate).toLocaleDateString() : "--"} to{" "}
-                        {selectedStage.actualEndDate ? new Date(selectedStage.actualEndDate).toLocaleDateString() : "--"}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Git branch and repo */}
-                  <div className="rounded-lg border border-border p-3 space-y-3 bg-muted/10">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Code Repository details</span>
-                    <div className="grid gap-2 text-xs">
-                      <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground">GitHub Repo:</span>
-                        <span className="font-semibold text-foreground">{selectedStage.githubRepo || "None"}</span>
-                      </div>
-                      {selectedStage.branchName && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-muted-foreground">Branch:</span>
-                          <div className="flex items-center gap-1">
-                            <span className="font-mono text-foreground font-semibold bg-secondary px-1.5 py-0.5 rounded">{selectedStage.branchName}</span>
-                            <button
-                              onClick={() => handleCopyBranch(selectedStage.branchName)}
-                              className="p-1 hover:bg-muted text-muted-foreground hover:text-foreground rounded cursor-pointer border-none bg-transparent"
-                              title="Copy branch name"
-                            >
-                              <Clipboard className="h-3 w-3" />
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      {selectedStage.prLink && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-muted-foreground">Pull Request:</span>
-                          <a href={selectedStage.prLink} target="_blank" rel="noreferrer" className="text-primary font-semibold hover:underline inline-flex items-center gap-1">
-                            View PR
-                            <ExternalLink className="h-3 w-3" />
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Assignee and notes */}
-                  <div className="rounded-lg border border-border p-3 space-y-2 bg-muted/10">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Assignment</span>
-                    <div className="flex items-center gap-2">
-                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
-                        {selectedStage.assignedTo?.name ? selectedStage.assignedTo.name.split(" ").map(n=>n[0]).join("") : "?"}
-                      </div>
-                      <div className="text-xs">
-                        <p className="font-semibold text-foreground">{selectedStage.assignedTo?.name || "Unassigned"}</p>
-                        <p className="text-muted-foreground text-[10px]">{selectedStage.assignedTo?.email || ""}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Notes */}
-                  <div className="rounded-lg border border-border p-3 space-y-1.5 bg-muted/10">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Notes</span>
-                    <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-line">
-                      {selectedStage.notes || <span className="italic opacity-60">No notes provided for this stage.</span>}
-                    </p>
-                  </div>
-
-                  <Button onClick={() => setIsEditingStage(true)} className="w-full cursor-pointer flex items-center justify-center gap-1.5">
-                    <Edit2 className="h-4 w-4" />
-                    Edit Stage Details
-                  </Button>
-                </div>
-              ) : (
-                // Edit Mode
-                <form onSubmit={handleSubmit(handleStageEditSubmit)} className="space-y-4 pt-1">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="plannedStartDate" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Planned Start</Label>
-                      <Input id="plannedStartDate" type="date" className="bg-card h-8 text-xs" {...register("plannedStartDate")} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="plannedEndDate" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Planned End</Label>
-                      <Input id="plannedEndDate" type="date" className="bg-card h-8 text-xs" {...register("plannedEndDate")} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="actualStartDate" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Actual Start</Label>
-                      <Input id="actualStartDate" type="date" className="bg-card h-8 text-xs" {...register("actualStartDate")} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="actualEndDate" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Actual End</Label>
-                      <Input id="actualEndDate" type="date" className="bg-card h-8 text-xs" {...register("actualEndDate")} />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="status-select" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Stage Status</Label>
-                    <select
-                      id="status-select"
-                      className="flex h-8 w-full rounded-md border border-input bg-card px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      {...register("status")}
-                    >
-                      <option value="not_started">Not Started</option>
-                      <option value="in_progress">In Progress</option>
-                      <option value="blocked">Blocked</option>
-                      <option value="on_hold">On Hold</option>
-                      <option value="completed">Completed</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="assignee-select" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Assigned Developer</Label>
-                    <select
-                      id="assignee-select"
-                      className="flex h-8 w-full rounded-md border border-input bg-card px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      {...register("assignedTo")}
-                    >
-                      <option value="">Unassigned</option>
-                      {users.map((u) => (
-                        <option key={u._id} value={u._id}>
-                          {u.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="githubRepo" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">GitHub Repo</Label>
-                      <Input id="githubRepo" placeholder="org/repo" className="bg-card h-8 text-xs" {...register("githubRepo")} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="branchName" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Branch Name</Label>
-                      <Input id="branchName" placeholder="feature/oauth" className="bg-card h-8 text-xs" {...register("branchName")} />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="prLink" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">PR Link URL</Label>
-                    <Input id="prLink" type="url" placeholder="https://github.com/..." className="bg-card h-8 text-xs" {...register("prLink")} />
-                    {errors.prLink && <p className="text-[10px] text-destructive">{errors.prLink.message}</p>}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="notes-area" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Notes & Logs</Label>
-                    <Textarea id="notes-area" placeholder="Enter logs, progress remarks, block blockers..." className="bg-card min-h-[70px] text-xs" {...register("notes")} />
-                  </div>
-
-                  <div className="flex gap-2 pt-2">
-                    <Button type="button" variant="outline" size="sm" onClick={() => setIsEditingStage(false)} className="flex-1 cursor-pointer">
-                      Cancel
-                    </Button>
-                    <Button type="submit" size="sm" disabled={isSubmitting} className="flex-1 cursor-pointer">
-                      {isSubmitting ? "Saving..." : "Save Changes"}
-                    </Button>
-                  </div>
-                </form>
-              )}
+      {/* Child Stories / Accordion Sections */}
+      <Card className="border border-border shadow-md bg-card overflow-hidden">
+        <CardHeader className="border-b border-border bg-muted/10 pb-4">
+          <CardTitle className="text-sm font-bold tracking-tight">Child Stories (Stage-wise Deliverables)</CardTitle>
+          <CardDescription>
+            Configure dates, assignments, branch info, and logs for each active pipeline stage.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-4">
+          {stages.length === 0 ? (
+            <div className="py-8 text-center text-xs text-muted-foreground">
+              No child stories initialized. Configure the stage plan above.
             </div>
+          ) : (
+            <Accordion 
+              value={expandedItem} 
+              onValueChange={setExpandedItem} 
+              className="w-full space-y-3"
+            >
+              {stages.map((stageVal) => {
+                const stageDef = stageVal.stageId;
+                if (!stageDef) return null;
+                return (
+                  <ChildStoryAccordionItem
+                    key={stageVal._id}
+                    storyStage={stageVal}
+                    stageName={stageDef.name}
+                    colorTag={stageDef.colorTag}
+                    storyId={story._id}
+                    users={story.assignedUsers} // Restricted to Main Story users
+                    onRefresh={onRefresh}
+                  />
+                );
+              })}
+            </Accordion>
           )}
-        </SheetContent>
-      </Sheet>
+        </CardContent>
+      </Card>
 
       {/* Place on Hold dialog */}
       <Dialog open={holdOpen} onOpenChange={setHoldOpen}>
@@ -953,18 +636,18 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
               placeholder="e.g. Awaiting Biz Compliance Sign-off"
               value={holdReason}
               onChange={(e) => setHoldReason(e.target.value)}
-              className="bg-card"
+              className="bg-card text-xs"
             />
           </div>
           <DialogFooter className="pt-2" showCloseButton={true}>
-            <Button variant="outline" onClick={() => setHoldOpen(false)} className="cursor-pointer">
+            <Button variant="outline" onClick={() => setHoldOpen(false)} className="cursor-pointer text-xs">
               Cancel
             </Button>
             <Button
               variant="destructive"
               onClick={submitHold}
               disabled={holdReason.trim().length < 2 || holdLoading}
-              className="cursor-pointer"
+              className="cursor-pointer text-xs"
             >
               {holdLoading ? "Blocking..." : "Block Journey"}
             </Button>
@@ -1008,16 +691,353 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
           </div>
 
           <DialogFooter className="pt-2" showCloseButton={true}>
-            <Button variant="outline" onClick={() => setPlanOpen(false)} className="cursor-pointer">
+            <Button variant="outline" onClick={() => setPlanOpen(false)} className="cursor-pointer text-xs">
               Cancel
             </Button>
-            <Button onClick={submitStagePlanMutation} className="cursor-pointer">
+            <Button onClick={submitStagePlanMutation} className="cursor-pointer text-xs">
               Save Plan
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// Collapsible Inline Form Accordion Item for Child Stories
+interface ChildStoryAccordionItemProps {
+  storyStage: StoryStage;
+  stageName: string;
+  colorTag: string;
+  storyId: string;
+  users: UserItem[];
+  onRefresh: () => void;
+}
+
+function ChildStoryAccordionItem({
+  storyStage,
+  stageName,
+  colorTag,
+  storyId,
+  users,
+  onRefresh,
+}: ChildStoryAccordionItemProps) {
+  const [copied, setCopied] = useState(false);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<StageEditFormValues>({
+    resolver: zodResolver(stageEditSchema),
+    defaultValues: {
+      plannedStartDate: storyStage.plannedStartDate ? new Date(storyStage.plannedStartDate).toISOString().split("T")[0] : "",
+      plannedEndDate: storyStage.plannedEndDate ? new Date(storyStage.plannedEndDate).toISOString().split("T")[0] : "",
+      actualStartDate: storyStage.actualStartDate ? new Date(storyStage.actualStartDate).toISOString().split("T")[0] : "",
+      actualEndDate: storyStage.actualEndDate ? new Date(storyStage.actualEndDate).toISOString().split("T")[0] : "",
+      status: storyStage.status,
+      githubRepo: storyStage.githubRepo || "",
+      branchName: storyStage.branchName || "",
+      prLink: storyStage.githubPrLink || "", // bind correctly to backend githubPrLink
+      prStatus: storyStage.prStatus || "none",
+      assignedTo: storyStage.developBy?._id || "", // bind correctly to developBy ID
+      notes: storyStage.notes || "",
+      implementationDescription: storyStage.implementationDescription || "",
+      adoStoryLink: storyStage.adoStoryLink || "",
+    },
+  });
+
+  const onSubmit = async (values: StageEditFormValues) => {
+    // Dates validation
+    if (values.plannedStartDate && values.plannedEndDate && new Date(values.plannedEndDate) < new Date(values.plannedStartDate)) {
+      toast.add({ title: "Validation error", description: "Planned End cannot be before Planned Start", type: "warning" });
+      return;
+    }
+    if (values.actualStartDate && values.actualEndDate && new Date(values.actualEndDate) < new Date(values.actualStartDate)) {
+      toast.add({ title: "Validation error", description: "Actual End cannot be before Actual Start", type: "warning" });
+      return;
+    }
+
+    try {
+      const formatted = {
+        ...values,
+        plannedStartDate: values.plannedStartDate ? new Date(values.plannedStartDate).toISOString() : null,
+        plannedEndDate: values.plannedEndDate ? new Date(values.plannedEndDate).toISOString() : null,
+        actualStartDate: values.actualStartDate ? new Date(values.actualStartDate).toISOString() : null,
+        actualEndDate: values.actualEndDate ? new Date(values.actualEndDate).toISOString() : null,
+        assignedTo: values.assignedTo || null,
+        prLink: values.prLink || "",
+      };
+
+      const res = await fetch(`/api/stories/${storyId}/stages/${storyStage.stageId?._id || (storyStage as any).stageId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formatted),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to update child story details.");
+      }
+
+      toast.add({
+        title: "Child Story updated",
+        description: `"${stageName}" details saved successfully.`,
+        type: "success",
+      });
+
+      onRefresh();
+    } catch (err: any) {
+      console.error(err);
+      toast.add({
+        title: "Save failed",
+        description: err.message || "An error occurred.",
+        type: "error",
+      });
+    }
+  };
+
+  const handleCopyBranchName = (e: React.MouseEvent, name?: string) => {
+    e.stopPropagation();
+    if (!name) return;
+    navigator.clipboard.writeText(name);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    toast.add({
+      title: "Copied",
+      description: "Branch name copied to clipboard.",
+      type: "success",
+    });
+  };
+
+  const getStatusStyle = (status: string) => {
+    switch (status) {
+      case "completed":
+        return { bg: "bg-emerald-500/10 text-emerald-600", icon: <CheckCircle2 className="h-4 w-4" /> };
+      case "in_progress":
+        return { bg: "bg-blue-500/10 text-blue-600 animate-pulse", icon: <Play className="h-3.5 w-3.5 fill-current ml-0.5" /> };
+      case "blocked":
+        return { bg: "bg-rose-500/10 text-rose-600", icon: <XCircle className="h-4 w-4" /> };
+      case "on_hold":
+      case "delayed":
+        return { bg: "bg-amber-500/10 text-amber-600", icon: <Clock className="h-4 w-4" /> };
+      default:
+        return { bg: "bg-muted text-muted-foreground", icon: <HelpCircle className="h-4 w-4" /> };
+    }
+  };
+
+  const stageColors = getStageColorConfig(colorTag);
+  const statusStyle = getStatusStyle(storyStage.status);
+  const isDelayed = storyStage.status === "delayed";
+
+  return (
+    <AccordionItem 
+      value={storyStage._id} 
+      id={`accordion-item-${storyStage._id}`}
+      className={cn(
+        "border rounded-xl bg-card overflow-hidden shadow-sm hover:border-primary/10 transition-colors",
+        isDelayed ? "border-rose-200" : "border-border"
+      )}
+    >
+      <AccordionTrigger className="px-4 py-3 hover:no-underline hover:bg-muted/10 transition-colors text-foreground">
+        <div className="flex items-center justify-between w-full gap-4 pr-2">
+          <div className="flex items-center gap-3 text-left">
+            <div className={cn("h-7 w-7 rounded-full flex items-center justify-center shrink-0 text-xs", statusStyle.bg)}>
+              {statusStyle.icon}
+            </div>
+            <div>
+              <h4 className="font-semibold text-foreground text-xs sm:text-sm flex items-center gap-2">
+                {storyStage.taskName}
+                <Badge className={cn("capitalize text-[9px] border-none bg-secondary/80", stageColors.text)}>
+                  {colorTag}
+                </Badge>
+                {isDelayed && (
+                  <Badge className="bg-rose-100 hover:bg-rose-100 text-rose-700 border-none font-bold text-[8px] py-0 px-1 flex items-center gap-0.5 uppercase shrink-0 animate-pulse">
+                    Delayed
+                  </Badge>
+                )}
+              </h4>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                Developer: <span className="text-foreground font-semibold">{storyStage.developBy?.name || "Unassigned"}</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {storyStage.branchName && (
+              <Badge 
+                variant="outline" 
+                onClick={(e) => handleCopyBranchName(e, storyStage.branchName)}
+                className="font-mono text-[9px] bg-muted/40 cursor-pointer hover:bg-muted transition-colors inline-flex items-center gap-1"
+              >
+                <GitBranch className="h-3 w-3 text-muted-foreground" />
+                {storyStage.branchName}
+                {copied ? <Check className="h-2.5 w-2.5 text-emerald-500" /> : <Clipboard className="h-2.5 w-2.5 text-muted-foreground/60" />}
+              </Badge>
+            )}
+            {storyStage.prStatus && storyStage.prStatus !== "none" && (
+              <Badge className={cn("text-[9px] font-bold border-none inline-flex items-center gap-1", 
+                storyStage.prStatus === "merged" ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
+              )}>
+                <GitPullRequest className="h-3 w-3" />
+                PR {storyStage.prStatus}
+              </Badge>
+            )}
+          </div>
+        </div>
+      </AccordionTrigger>
+
+      <AccordionContent className="border-t border-border/50 bg-muted/5 p-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 text-xs">
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+            {/* ADO Child Link */}
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">ADO Child Link / ID</Label>
+              <Input 
+                placeholder="https://dev.azure.com/..." 
+                type="url"
+                className="bg-card h-8.5 text-xs" 
+                {...register("adoStoryLink")} 
+              />
+            </div>
+
+            {/* Developer Dropdown restricted to Main Story users */}
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Assigned Developer</Label>
+              <select
+                className="flex h-8.5 w-full rounded-md border border-input bg-card px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                {...register("assignedTo")}
+              >
+                <option value="">Unassigned</option>
+                {users.map((u) => (
+                  <option key={u._id} value={u._id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Child Status */}
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Child Story Status</Label>
+              <select
+                className="flex h-8.5 w-full rounded-md border border-input bg-card px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                {...register("status")}
+              >
+                <option value="not_started">Not Started</option>
+                <option value="in_progress">In Progress</option>
+                <option value="blocked">Blocked</option>
+                <option value="completed">Completed</option>
+                <option value="delayed">Delayed</option>
+              </select>
+            </div>
+
+            {/* Git Branch name */}
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Git Branch Name</Label>
+              <Input 
+                placeholder="feature/oauth-integration" 
+                className="bg-card h-8.5 text-xs font-mono" 
+                {...register("branchName")} 
+              />
+            </div>
+
+            {/* GitHub Repo */}
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">GitHub Repo</Label>
+              <Input 
+                placeholder="org/repository-name" 
+                className="bg-card h-8.5 text-xs" 
+                {...register("githubRepo")} 
+              />
+            </div>
+
+            {/* Git PR Status */}
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">PR Status</Label>
+              <select
+                className="flex h-8.5 w-full rounded-md border border-input bg-card px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                {...register("prStatus")}
+              >
+                <option value="none">No Pull Request</option>
+                <option value="pending">PR Pending (Open)</option>
+                <option value="merged">PR Merged</option>
+              </select>
+            </div>
+
+            {/* GitHub PR Link */}
+            <div className="space-y-1.5 sm:col-span-2 md:col-span-3">
+              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">GitHub PR Link URL</Label>
+              <Input 
+                id={`pr-link-${storyStage._id}`}
+                type="url"
+                placeholder="https://github.com/org/repo/pull/123" 
+                className="bg-card h-8.5 text-xs" 
+                {...register("prLink")} 
+              />
+              {errors.prLink && <p className="text-[10px] text-destructive">{errors.prLink.message}</p>}
+            </div>
+
+            {/* Timelines */}
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Planned Start</Label>
+              <Input type="date" className="bg-card h-8.5 text-xs" {...register("plannedStartDate")} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Planned End</Label>
+              <Input type="date" className="bg-card h-8.5 text-xs" {...register("plannedEndDate")} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Actual Start</Label>
+              <Input type="date" className="bg-card h-8.5 text-xs" {...register("actualStartDate")} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Actual End</Label>
+              <Input type="date" className="bg-card h-8.5 text-xs" {...register("actualEndDate")} />
+            </div>
+
+            {/* Implementation details */}
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Implementation Description</Label>
+              <Textarea 
+                placeholder="Detail what technical steps/tasks were executed in this stage child story..."
+                className="bg-card min-h-[85px] text-xs leading-relaxed" 
+                {...register("implementationDescription")} 
+              />
+            </div>
+
+            {/* Notes Logs */}
+            <div className="space-y-1.5 sm:col-span-2 md:col-span-3">
+              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Notes & Logs</Label>
+              <Textarea 
+                placeholder="Log blockers, testing remarks, key notes..."
+                className="bg-card min-h-[60px] text-xs" 
+                {...register("notes")} 
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <Button type="submit" disabled={isSubmitting} size="sm" className="cursor-pointer text-xs">
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-1.5 h-4 w-4" />
+                  Save Stage Story
+                </>
+              )}
+            </Button>
+          </div>
+        </form>
+      </AccordionContent>
+    </AccordionItem>
   );
 }
 
@@ -1040,9 +1060,11 @@ function SortablePlannerRow({ stage, onToggle }: SortablePlannerRowProps) {
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    zIndex: isDragging ? 30 : 1,
+    zIndex: isDragging ? 50 : 1,
     position: "relative" as const,
   };
+
+  const colors = getStageColorConfig(stage.colorTag);
 
   return (
     <div
@@ -1050,11 +1072,10 @@ function SortablePlannerRow({ stage, onToggle }: SortablePlannerRowProps) {
       style={style}
       className={cn(
         "flex items-center gap-2 rounded-lg border p-2 bg-card hover:bg-muted/40 transition-colors",
-        stage.isStarted ? "border-emerald-200 bg-emerald-50/10 hover:bg-emerald-50/10 opacity-90" : "border-border",
+        stage.isStarted ? "border-emerald-200 bg-emerald-50/10" : "border-border",
         isDragging && "shadow-md bg-accent/80 border-primary/20 opacity-80 z-50 select-none"
       )}
     >
-      {/* Hide drag handle if stage has already started to enforce sequence lock */}
       {!stage.isStarted ? (
         <button
           type="button"
@@ -1066,7 +1087,7 @@ function SortablePlannerRow({ stage, onToggle }: SortablePlannerRowProps) {
         </button>
       ) : (
         <div className="p-1 text-emerald-500 shrink-0">
-          <Check className="h-4 w-4 stroke-[3px]" />
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M20 6 9 17l-5-5"/></svg>
         </div>
       )}
 
@@ -1094,7 +1115,7 @@ function SortablePlannerRow({ stage, onToggle }: SortablePlannerRowProps) {
           Started
         </Badge>
       ) : (
-        <Badge className={cn("capitalize text-[9px] font-bold border-none bg-secondary/80", getStageColorConfig(stage.colorTag).text)}>
+        <Badge className={cn("capitalize text-[9px] font-bold border-none bg-secondary/80", colors.text)}>
           {stage.colorTag}
         </Badge>
       )}

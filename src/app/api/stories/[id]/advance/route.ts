@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
-import { UserStory } from "@/models/UserStory";
+import { Story } from "@/models/Story";
 import { StoryStage } from "@/models/StoryStage";
 import { getSession } from "@/lib/session";
 
@@ -18,42 +18,61 @@ export async function POST(
 
     await dbConnect();
 
-    const story = await UserStory.findById(storyId);
+    const story = await Story.findById(storyId);
     if (!story) {
-      return NextResponse.json({ error: "User Story not found." }, { status: 404 });
+      return NextResponse.json({ error: "Story not found." }, { status: 404 });
     }
 
-    const maxOrder = story.stagePlan.length;
-    const currentOrder = story.currentStageOrder;
+    // Get active child stages in sequence
+    const activeStages = await StoryStage.find({ storyId, isArchived: { $ne: true } })
+      .sort({ stageOrder: 1 });
 
+    if (activeStages.length === 0) {
+      return NextResponse.json({ error: "No stages found in story plan." }, { status: 400 });
+    }
+
+    // Find the current active stage (first stage that is not completed)
+    const currentActiveStageIndex = activeStages.findIndex((s) => s.status !== "completed");
+
+    if (currentActiveStageIndex === -1) {
+      // All stages are already completed
+      story.status = "completed";
+      if (!story.actualEndDate) {
+        story.actualEndDate = new Date();
+      }
+      await story.save();
+      return NextResponse.json(story);
+    }
+
+    const currentStage = activeStages[currentActiveStageIndex];
+    
     // 1. Complete the current active stage
-    const currentStage = await StoryStage.findOne({ story: storyId, order: currentOrder });
-    if (currentStage) {
-      currentStage.status = "completed";
-      if (!currentStage.actualEndDate) {
-        currentStage.actualEndDate = new Date();
+    currentStage.status = "completed";
+    if (!currentStage.actualEndDate) {
+      currentStage.actualEndDate = new Date();
+    }
+    await currentStage.save();
+
+    // 2. Start the next stage if it exists
+    if (currentActiveStageIndex + 1 < activeStages.length) {
+      const nextStage = activeStages[currentActiveStageIndex + 1];
+      nextStage.status = "in_progress";
+      if (!nextStage.actualStartDate) {
+        nextStage.actualStartDate = new Date();
       }
-      await currentStage.save();
+      await nextStage.save();
+      story.status = "in_progress";
+    } else {
+      // Completed the final stage in the plan
+      story.status = "completed";
+      if (!story.actualEndDate) {
+        story.actualEndDate = new Date();
+      }
     }
 
-    // 2. Determine progression
-    if (currentOrder >= maxOrder) {
-      // Completed the final stage in the plan
-      story.overallStatus = "completed";
-    } else {
-      // Advance to the next stage in sequence
-      const nextOrder = currentOrder + 1;
-      story.currentStageOrder = nextOrder;
-      story.overallStatus = "in_progress";
-
-      const nextStage = await StoryStage.findOne({ story: storyId, order: nextOrder });
-      if (nextStage) {
-        nextStage.status = "in_progress";
-        if (!nextStage.actualStartDate) {
-          nextStage.actualStartDate = new Date();
-        }
-        await nextStage.save();
-      }
+    // Recalculate parent actualStartDate if not set
+    if (!story.actualStartDate) {
+      story.actualStartDate = new Date();
     }
 
     await story.save();

@@ -39,9 +39,7 @@ export function Sidebar({ user, className, isMobile = false }: SidebarProps) {
 
   const mainNavItems = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
-    { name: "Tasks", href: "/tasks", icon: CheckSquare },
-    { name: "Sprints", href: "/sprints", icon: Milestone },
-    { name: "Stories", href: "/stories", icon: BookOpen },
+    { name: "Stories Workspace", href: "/stories", icon: BookOpen },
   ];
 
   const adminNavItems = [

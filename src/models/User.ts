@@ -4,6 +4,7 @@ export interface IUser extends Document {
   name: string;
   email: string;
   passwordHash: string;
+  status: "active" | "inactive";
   createdAt: Date;
   updatedAt: Date;
 }
@@ -13,6 +14,12 @@ const UserSchema = new Schema<IUser>(
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true, index: true },
     passwordHash: { type: String, required: true },
+    status: {
+      type: String,
+      enum: ["active", "inactive"],
+      default: "active",
+      index: true,
+    },
   },
   { timestamps: true }
 );
