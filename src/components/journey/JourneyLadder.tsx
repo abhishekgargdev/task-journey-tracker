@@ -68,6 +68,11 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { formatDateForInput, serializeDateInput } from "@/lib/date-utils";
+import {
+  formatDisplayDate,
+  healthLabel,
+  type StageInsight,
+} from "@/lib/story-monitoring";
 
 // Types
 interface StageDefinition {
@@ -128,6 +133,8 @@ interface JourneyLadderProps {
   story: UserStory;
   stages: StoryStage[];
   onRefresh: () => void;
+  highlightStageId?: string | null;
+  stageInsights?: StageInsight[];
 }
 
 // Stage Form Validation Schema
@@ -151,8 +158,9 @@ const stageEditSchema = z.object({
 
 type StageEditFormValues = z.infer<typeof stageEditSchema>;
 
-export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadderProps) {
+export default function JourneyLadder({ story, stages, onRefresh, highlightStageId, stageInsights = [] }: JourneyLadderProps) {
   const [expandedItem, setExpandedItem] = useState<any[]>([]);
+  const [hoveredStageId, setHoveredStageId] = useState<string | null>(null);
 
   // Dialog Controls
   const [holdOpen, setHoldOpen] = useState(false);
@@ -179,6 +187,14 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
       accordionEl.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   };
+
+  React.useEffect(() => {
+    if (highlightStageId) {
+      setExpandedItem([highlightStageId]);
+      const el = document.getElementById(`accordion-item-${highlightStageId}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlightStageId]);
 
   const handleAdvance = async () => {
     try {
@@ -370,41 +386,52 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
     }
   };
 
-  // Node Status Aesthetics helper
-  const getNodeAesthetics = (status: string) => {
-    switch (status) {
-      case "completed":
-        return {
-          bg: "bg-emerald-500 border-emerald-500 text-white shadow-emerald-500/20",
-          icon: <CheckCircle2 className="h-5.5 w-5.5" />,
-          labelColor: "text-emerald-600 font-semibold",
-        };
-      case "in_progress":
-        return {
-          bg: "bg-blue-500 border-blue-500 text-white shadow-blue-500/20 ring-4 ring-blue-500/20 animate-pulse",
-          icon: <Play className="h-4.5 w-4.5 fill-current ml-0.5" />,
-          labelColor: "text-blue-600 font-semibold",
-        };
-      case "blocked":
-        return {
-          bg: "bg-rose-500 border-rose-500 text-white shadow-rose-500/20 ring-4 ring-rose-500/20 animate-bounce",
-          icon: <XCircle className="h-5 w-5" />,
-          labelColor: "text-rose-600 font-bold",
-        };
-      case "on_hold":
-      case "delayed":
-        return {
-          bg: "bg-amber-500 border-amber-500 text-white shadow-amber-500/20",
-          icon: <Clock className="h-5 w-5" />,
-          labelColor: "text-amber-600 font-semibold",
-        };
-      default:
-        return {
-          bg: "bg-card border-border text-muted-foreground hover:bg-muted/40",
-          icon: <HelpCircle className="h-5 w-5" />,
-          labelColor: "text-muted-foreground/80 font-medium",
-        };
+  // Node Status Aesthetics helper — uses actual status + dates, not position alone
+  const getNodeAesthetics = (stageVal: StoryStage, isCurrent: boolean) => {
+    const status = stageVal.status;
+    const insight = stageInsights.find((i) => i.stage._id === stageVal._id);
+    const isDelayed =
+      status === "delayed" ||
+      ((insight?.daysOverdue ?? 0) > 0 && status !== "completed");
+
+    if (status === "completed") {
+      return {
+        bg: "bg-emerald-500 border-emerald-500 text-white shadow-emerald-500/20",
+        icon: <CheckCircle2 className="h-5.5 w-5.5" />,
+        labelColor: "text-emerald-600 font-semibold",
+        symbol: "✓",
+      };
     }
+    if (status === "blocked") {
+      return {
+        bg: "bg-orange-500 border-orange-500 text-white shadow-orange-500/20 ring-4 ring-orange-500/20",
+        icon: <span className="text-lg font-bold">!</span>,
+        labelColor: "text-orange-600 font-bold",
+        symbol: "!",
+      };
+    }
+    if (isDelayed) {
+      return {
+        bg: "bg-rose-500 border-rose-500 text-white shadow-rose-500/20 ring-4 ring-rose-500/20",
+        icon: <AlertTriangle className="h-5 w-5" />,
+        labelColor: "text-rose-600 font-bold",
+        symbol: "⚠",
+      };
+    }
+    if (isCurrent || status === "in_progress") {
+      return {
+        bg: "bg-blue-500 border-blue-500 text-white shadow-blue-500/20 ring-4 ring-blue-500/20 animate-pulse",
+        icon: <Play className="h-4.5 w-4.5 fill-current ml-0.5" />,
+        labelColor: "text-blue-600 font-semibold",
+        symbol: "▶",
+      };
+    }
+    return {
+      bg: "bg-card border-border text-muted-foreground hover:bg-muted/40",
+      icon: <HelpCircle className="h-5 w-5" />,
+      labelColor: "text-muted-foreground/80 font-medium",
+      symbol: "○",
+    };
   };
 
   const buildStageTree = (flatStages: StoryStage[]): StoryStage[] => {
@@ -447,6 +474,12 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
 
   const nextStage = ladderStages.find(s => s.status !== "completed");
   const nextStageName = nextStage?.stageId?.name || "Go Live";
+  const currentStageId = nextStage?._id;
+  const inProgressCount = ladderStages.filter((s) => s.status === "in_progress").length;
+  const upcomingCount = ladderStages.filter((s) => s.status === "not_started").length;
+  const delayedCount = stageInsights.filter(
+    (i) => i.daysOverdue && i.stage.status !== "completed"
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -482,20 +515,37 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
       </AnimatePresence>
 
       {/* Control Buttons & Progress Headers */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-card border border-border p-4 rounded-xl shadow-sm">
-        <div className="space-y-1">
-          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Overall Progress</span>
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-bold text-foreground sm:text-base">
-              {completedStagesCount} of {totalStagesCount} stages complete
-            </h3>
-            <Badge className="bg-primary/10 text-primary border-none font-bold py-0.5 text-[10px]">
-              {totalStagesCount > 0 ? Math.round((completedStagesCount / totalStagesCount) * 100) : 0}%
-            </Badge>
+      <div className="bg-card border border-border p-4 rounded-xl shadow-sm space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+          <div className="space-y-3 flex-1">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Overall Progress</span>
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <h3 className="text-lg font-bold text-foreground">
+                {completedStagesCount} / {totalStagesCount}
+              </h3>
+              <span className="text-sm text-muted-foreground">Stages Complete</span>
+              <Badge className="bg-primary/10 text-primary border-none font-bold">
+                {totalStagesCount > 0 ? Math.round((completedStagesCount / totalStagesCount) * 100) : 0}%
+              </Badge>
+            </div>
+            <div className="h-2.5 w-full max-w-md bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full bg-emerald-500 transition-all duration-700"
+                style={{ width: `${totalStagesCount > 0 ? (completedStagesCount / totalStagesCount) * 100 : 0}%` }}
+              />
+            </div>
+            <div className="flex flex-wrap gap-3 text-[11px]">
+              <StatPill label="Completed" value={completedStagesCount} color="text-emerald-600" />
+              <StatPill label="In Progress" value={inProgressCount} color="text-blue-600" />
+              <StatPill label="Upcoming" value={upcomingCount} color="text-muted-foreground" />
+              <StatPill label="Delayed" value={delayedCount} color="text-rose-600" />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Current Stage: <span className="font-semibold text-foreground">{nextStageName}</span>
+            </p>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap shrink-0">
           <Button
             onClick={openPlanEditor}
             variant="outline"
@@ -530,6 +580,7 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
               </>
             )}
           </Button>
+        </div>
         </div>
       </div>
 
@@ -577,7 +628,10 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
             const stageDef = stageVal.stageId;
             if (!stageDef) return null;
             const stageColors = getStageColorConfig(stageDef.colorTag);
-            const aes = getNodeAesthetics(stageVal.status);
+            const isCurrent = stageVal._id === currentStageId;
+            const aes = getNodeAesthetics(stageVal, isCurrent);
+            const insight = stageInsights.find((i) => i.stage._id === stageVal._id);
+            const isHighlighted = highlightStageId === stageVal._id;
 
             return (
               <motion.div
@@ -586,7 +640,12 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: index * 0.1, type: "spring", stiffness: 200 }}
                 onClick={() => handleNodeClick(stageVal)}
-                className="flex flex-col items-center gap-2.5 z-10 cursor-pointer group text-center select-none"
+                onMouseEnter={() => setHoveredStageId(stageVal._id)}
+                onMouseLeave={() => setHoveredStageId(null)}
+                className={cn(
+                  "flex flex-col items-center gap-2.5 z-10 cursor-pointer group text-center select-none relative",
+                  isHighlighted && "scale-105"
+                )}
               >
                 {/* Node Circle */}
                 <div
@@ -594,7 +653,8 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
                     "h-12 w-12 rounded-full border-2 flex items-center justify-center transition-all duration-300 shadow-sm",
                     aes.bg,
                     "hover:ring-4 group-hover:scale-105",
-                    stageColors.ring
+                    stageColors.ring,
+                    isHighlighted && "ring-4 ring-primary"
                   )}
                 >
                   {aes.icon}
@@ -602,7 +662,7 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
 
                 {/* Node Text info */}
                 <div className="space-y-0.5">
-                  <h4 className={cn("text-xs font-semibold tracking-tight transition-colors", aes.labelColor)}>
+                  <h4 className={cn("text-xs font-semibold tracking-tight transition-colors max-w-[90px] leading-tight", aes.labelColor)}>
                     {stageDef.name}
                   </h4>
                   <div className="flex items-center justify-center gap-1">
@@ -610,6 +670,42 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
                     <span className="text-[9px] uppercase font-bold text-muted-foreground/60">{stageDef.colorTag}</span>
                   </div>
                 </div>
+
+                {/* Hover detail popover */}
+                {hoveredStageId === stageVal._id && insight && (
+                  <div className="absolute top-full mt-2 z-50 hidden md:block w-52 rounded-lg border border-border bg-card shadow-lg p-3 text-left text-[10px] pointer-events-none">
+                    <p className="font-bold text-foreground mb-2">{insight.stageName}</p>
+                    <div className="space-y-1 text-muted-foreground">
+                      <p>
+                        <span className="font-semibold text-foreground/80">Developer:</span>{" "}
+                        {stageVal.developBy?.name || "Unassigned"}
+                      </p>
+                      <p>
+                        <span className="font-semibold text-foreground/80">Planned:</span>{" "}
+                        {formatDisplayDate(stageVal.plannedStartDate)} → {formatDisplayDate(stageVal.plannedEndDate)}
+                      </p>
+                      {(stageVal.actualStartDate || stageVal.actualEndDate) && (
+                        <p>
+                          <span className="font-semibold text-foreground/80">Actual:</span>{" "}
+                          {formatDisplayDate(stageVal.actualStartDate)} → {formatDisplayDate(stageVal.actualEndDate)}
+                        </p>
+                      )}
+                      <p>
+                        <span className="font-semibold text-foreground/80">Status:</span>{" "}
+                        <span className="capitalize">{stageVal.status.replace(/_/g, " ")}</span>
+                      </p>
+                      <p>
+                        <span className="font-semibold text-foreground/80">Result:</span>{" "}
+                        {healthLabel(insight.health)}
+                      </p>
+                      {insight.daysOverdue && stageVal.status !== "completed" && (
+                        <p className="text-rose-600 font-semibold">
+                          {insight.daysOverdue} day{insight.daysOverdue === 1 ? "" : "s"} overdue
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </motion.div>
             );
           })}
@@ -650,6 +746,8 @@ export default function JourneyLadder({ story, stages, onRefresh }: JourneyLadde
                     users={story.assignedUsers}
                     onRefresh={onRefresh}
                     childStages={stageVal.children || []}
+                    stageInsight={stageInsights.find((i) => i.stage._id === stageVal._id)}
+                    isHighlighted={highlightStageId === stageVal._id}
                   />
                 );
               })}
@@ -758,6 +856,8 @@ export interface ChildStoryAccordionItemProps {
   childStages?: any[];
   depth?: number;
   isSubTicket?: boolean;
+  stageInsight?: StageInsight;
+  isHighlighted?: boolean;
 }
 
 export function ChildStoryAccordionItem({
@@ -772,6 +872,8 @@ export function ChildStoryAccordionItem({
   childStages = [],
   depth = 0,
   isSubTicket = false,
+  stageInsight,
+  isHighlighted = false,
 }: ChildStoryAccordionItemProps) {
   const [copied, setCopied] = useState(false);
   const [addingChild, setAddingChild] = useState(false);
@@ -991,7 +1093,39 @@ export function ChildStoryAccordionItem({
 
   const stageColors = getStageColorConfig(colorTag);
   const statusStyle = getStatusStyle(storyStage.status);
-  const isDelayed = storyStage.status === "delayed";
+  const isDelayed =
+    storyStage.status === "delayed" ||
+    Boolean(stageInsight?.daysOverdue && storyStage.status !== "completed");
+
+  const statusLabel =
+    storyStage.status === "completed"
+      ? healthLabel(stageInsight?.health || "completed_on_time")
+      : storyStage.status === "not_started"
+        ? "Not Started"
+        : storyStage.status.replace(/_/g, " ");
+
+  const timingLabel = (() => {
+    if (storyStage.status === "completed") return null;
+    if (stageInsight?.daysOverdue) {
+      return `${stageInsight.daysOverdue} day${stageInsight.daysOverdue === 1 ? "" : "s"} overdue`;
+    }
+    if (stageInsight?.daysRemaining !== null && stageInsight?.daysRemaining !== undefined) {
+      return `${stageInsight.daysRemaining} day${stageInsight.daysRemaining === 1 ? "" : "s"} remaining`;
+    }
+    if (stageInsight?.daysUntilStart !== null && stageInsight?.daysUntilStart !== undefined && storyStage.status === "not_started") {
+      return `Starts in ${stageInsight.daysUntilStart} day${stageInsight.daysUntilStart === 1 ? "" : "s"}`;
+    }
+    return null;
+  })();
+
+  const prSummary =
+    storyStage.prStatus === "merged"
+      ? "Merged"
+      : storyStage.prStatus === "pending"
+        ? "Open"
+        : storyStage.githubPrLink
+          ? "PR linked"
+          : "Not Created";
 
   return (
     <div style={{ marginLeft: depth > 0 ? `${depth * 16}px` : 0 }} className="space-y-3">
@@ -1000,35 +1134,78 @@ export function ChildStoryAccordionItem({
       id={`accordion-item-${storyStage._id}`}
       className={cn(
         "border rounded-xl bg-card overflow-hidden shadow-sm hover:border-primary/10 transition-colors",
-        isDelayed ? "border-rose-200" : "border-border",
+        isDelayed ? "border-rose-300 bg-rose-500/[0.02]" : "border-border",
+        isHighlighted && "ring-2 ring-primary border-primary/40",
         isSubTicket && "border-l-4 border-l-primary/40"
       )}
     >
       <AccordionTrigger className="px-4 py-3 hover:no-underline hover:bg-muted/10 transition-colors text-foreground">
-        <div className="flex items-center justify-between w-full gap-4 pr-2">
-          <div className="flex items-center gap-3 text-left">
-            <div className={cn("h-7 w-7 rounded-full flex items-center justify-center shrink-0 text-xs", statusStyle.bg)}>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between w-full gap-3 pr-2">
+          <div className="flex items-start gap-3 text-left min-w-0 flex-1">
+            <div className={cn("h-8 w-8 rounded-full flex items-center justify-center shrink-0", statusStyle.bg)}>
               {statusStyle.icon}
             </div>
-            <div>
-              <h4 className="font-semibold text-foreground text-xs sm:text-sm flex items-center gap-2">
-                {storyStage.taskName}
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="font-semibold text-foreground text-xs sm:text-sm">
+                  {storyStage.taskName}
+                </h4>
                 <Badge className={cn("capitalize text-[9px] border-none bg-secondary/80", stageColors.text)}>
                   {colorTag}
                 </Badge>
-                {isDelayed && (
-                  <Badge className="bg-rose-100 hover:bg-rose-100 text-rose-700 border-none font-bold text-[8px] py-0 px-1 flex items-center gap-0.5 uppercase shrink-0 animate-pulse">
-                    Delayed
-                  </Badge>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "text-[9px] font-bold capitalize",
+                    isDelayed && "bg-rose-100 text-rose-700 border-rose-200",
+                    storyStage.status === "in_progress" && !isDelayed && "bg-blue-100 text-blue-700 border-blue-200",
+                    storyStage.status === "completed" && "bg-emerald-100 text-emerald-700 border-emerald-200"
+                  )}
+                >
+                  {isDelayed && storyStage.status !== "completed" ? "Delayed" : statusLabel}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4 gap-y-1 text-[10px]">
+                <div>
+                  <span className="text-muted-foreground">Developer</span>
+                  <p className="font-semibold text-foreground truncate">
+                    {storyStage.developBy?.name || "Unassigned"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Planned</span>
+                  <p className="font-medium text-foreground">
+                    {formatDisplayDate(storyStage.plannedStartDate)} → {formatDisplayDate(storyStage.plannedEndDate)}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Actual</span>
+                  <p className="font-medium text-foreground">
+                    {formatDisplayDate(storyStage.actualStartDate)} → {formatDisplayDate(storyStage.actualEndDate)}
+                  </p>
+                </div>
+                {timingLabel && (
+                  <div>
+                    <span className="text-muted-foreground">
+                      {stageInsight?.daysOverdue ? "Overdue" : storyStage.status === "not_started" ? "Starts In" : "Due"}
+                    </span>
+                    <p className={cn("font-semibold", isDelayed ? "text-rose-600" : "text-foreground")}>
+                      {timingLabel}
+                    </p>
+                  </div>
                 )}
-              </h4>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                Developer: <span className="text-foreground font-semibold">{storyStage.developBy?.name || "Unassigned"}</span>
-              </p>
+                {stageInsight?.durationDays && storyStage.status === "completed" && (
+                  <div>
+                    <span className="text-muted-foreground">Duration</span>
+                    <p className="font-medium text-foreground">{stageInsight.durationDays} days</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 sm:flex-col sm:items-end">
             {storyStage.branchName && (
               <Badge 
                 variant="outline" 
@@ -1040,14 +1217,10 @@ export function ChildStoryAccordionItem({
                 {copied ? <Check className="h-2.5 w-2.5 text-emerald-500" /> : <Clipboard className="h-2.5 w-2.5 text-muted-foreground/60" />}
               </Badge>
             )}
-            {storyStage.prStatus && storyStage.prStatus !== "none" && (
-              <Badge className={cn("text-[9px] font-bold border-none inline-flex items-center gap-1", 
-                storyStage.prStatus === "merged" ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
-              )}>
-                <GitPullRequest className="h-3 w-3" />
-                PR {storyStage.prStatus}
-              </Badge>
-            )}
+            <Badge variant="outline" className="text-[9px] font-semibold">
+              <GitPullRequest className="h-3 w-3 mr-1" />
+              {prSummary}
+            </Badge>
           </div>
         </div>
       </AccordionTrigger>
@@ -1395,5 +1568,14 @@ function SortablePlannerRow({ stage, onToggle }: SortablePlannerRowProps) {
         </Badge>
       )}
     </div>
+  );
+}
+
+function StatPill({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-full bg-muted/50 px-2 py-0.5", color)}>
+      <span className="font-bold">{value}</span>
+      <span className="text-muted-foreground">{label}</span>
+    </span>
   );
 }

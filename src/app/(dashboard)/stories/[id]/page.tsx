@@ -1,6 +1,6 @@
 "use client";
 
-import React, { use, useEffect, useState } from "react";
+import React, { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -23,22 +23,13 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { 
   ArrowLeft, 
-  ExternalLink, 
-  Layers, 
-  Calendar, 
-  User as UserIcon,
   AlertTriangle,
   Loader2,
-  Edit,
-  FileText,
   GripVertical,
-  Trash2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import StatusBadge from "@/components/shared/StatusBadge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -46,10 +37,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import JourneyLadder from "@/components/journey/JourneyLadder";
+import StoryCommandHeader from "@/components/journey/StoryCommandHeader";
+import StoryMonitoringCards, { type MonitorFilter } from "@/components/journey/StoryMonitoringCards";
+import DeveloperCommunicationCard from "@/components/journey/DeveloperCommunicationCard";
 import DeleteConfirmDialog, { DeleteConfirmItem } from "@/components/shared/DeleteConfirmDialog";
 import { cn } from "@/lib/utils";
 import { getStageColorConfig } from "@/lib/stage-colors";
-import { formatDateForInput } from "@/lib/date-utils";
+import { formatDateForInput, serializeDateInput } from "@/lib/date-utils";
+import { computeStoryInsights } from "@/lib/story-monitoring";
 
 // Validation schema for editing Parent Story
 const storyEditSchema = z.object({
@@ -60,6 +55,8 @@ const storyEditSchema = z.object({
   hasSprint: z.boolean(),
   plannedStartDate: z.string().min(1, { message: "Planned Start Date is required." }),
   plannedEndDate: z.string().min(1, { message: "Planned End Date is required." }),
+  actualStartDate: z.string().optional(),
+  actualEndDate: z.string().optional(),
 });
 
 type StoryEditValues = z.infer<typeof storyEditSchema>;
@@ -135,6 +132,8 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<DeleteConfirmItem | null>(null);
+  const [highlightStageId, setHighlightStageId] = useState<string | null>(null);
+  const [monitorFilter, setMonitorFilter] = useState<MonitorFilter>(null);
   
   const [allUsers, setAllUsers] = useState<DbUser[]>([]);
   const [catalogStages, setCatalogStages] = useState<PlannerStage[]>([]);
@@ -209,6 +208,11 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
     fetchSelectOptions();
   }, [storyId]);
 
+  const insights = useMemo(() => {
+    if (!story) return null;
+    return computeStoryInsights(story, story.childStages);
+  }, [story]);
+
   const openEditDialog = () => {
     if (!story) return;
     
@@ -220,6 +224,8 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
       hasSprint: story.hasSprint ?? Boolean(story.sprintUrl),
       plannedStartDate: formatDateForInput(story.plannedStartDate),
       plannedEndDate: formatDateForInput(story.plannedEndDate),
+      actualStartDate: formatDateForInput(story.actualStartDate),
+      actualEndDate: formatDateForInput(story.actualEndDate),
     });
 
     // Populate checked users
@@ -366,6 +372,8 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
       const payload = {
         ...values,
         sprintUrl: values.hasSprint ? values.sprintUrl : "",
+        actualStartDate: serializeDateInput(values.actualStartDate),
+        actualEndDate: serializeDateInput(values.actualEndDate),
         userIds: selectedUserIds,
         stageOrder: selectedStagePlanIds,
       };
@@ -428,149 +436,38 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div className="space-y-6">
-      {/* Back navigation */}
-      <Link href="/stories" className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline">
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Back to Stories workspace
-      </Link>
+      {insights && (
+        <StoryCommandHeader
+          story={story}
+          insights={insights}
+          onEdit={openEditDialog}
+          onDelete={openDeleteDialog}
+          onRefresh={fetchStoryDetails}
+        />
+      )}
 
-      {/* Story Details Card Header */}
-      <Card className="border-border bg-card shadow-md">
-        <CardHeader className="pb-3 border-b border-border bg-muted/10">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">User Story Journey</span>
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <Badge className="bg-primary/5 text-primary text-xs font-mono font-bold border border-primary/20">
-                  #{story.storyNumber}
-                </Badge>
-                <CardTitle className="text-lg font-bold font-sans text-foreground">
-                  {story.taskName}
-                </CardTitle>
-              </div>
-            </div>
-            <div className="flex items-center gap-2.5 self-start sm:self-center">
-              <StatusBadge status={story.status} />
-              <Button onClick={openEditDialog} variant="outline" size="sm" className="cursor-pointer">
-                <Edit className="h-4 w-4 mr-1.5" />
-                Edit Details
-              </Button>
-              <Button
-                onClick={openDeleteDialog}
-                variant="outline"
-                size="sm"
-                className="cursor-pointer text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
-              >
-                <Trash2 className="h-4 w-4 mr-1.5" />
-                Delete
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="py-4 space-y-4 text-xs">
-          {/* Metadata Grid */}
-          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
-            <div className="space-y-1">
-              <span className="text-muted-foreground font-semibold">Assigned Members:</span>
-              <p className="font-semibold text-foreground flex flex-wrap gap-1.5 mt-0.5">
-                {story.assignedUsers.length === 0 ? (
-                  <span className="italic text-muted-foreground/60">No members assigned</span>
-                ) : (
-                  story.assignedUsers.map((u) => (
-                    <span key={u._id} className="bg-secondary/80 text-secondary-foreground text-[10px] font-semibold px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                      <UserIcon className="h-2.5 w-2.5" />
-                      {u.name}
-                    </span>
-                  ))
-                )}
-              </p>
-            </div>
-            <div className="space-y-1">
-              <span className="text-muted-foreground font-semibold">Pipeline Length:</span>
-              <p className="font-semibold text-foreground flex items-center gap-1 mt-0.5">
-                <Layers className="h-3.5 w-3.5 text-primary" />
-                {story.stageOrder.length} delivery stages sequenced
-              </p>
-            </div>
-            <div className="space-y-1">
-              <span className="text-muted-foreground font-semibold">Sprint:</span>
-              <p className="font-medium text-foreground mt-0.5">
-                {story.hasSprint && story.sprintUrl ? (
-                  <a href={story.sprintUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline inline-flex items-center gap-1 text-xs">
-                    <ExternalLink className="h-3 w-3" />
-                    Open Sprint
-                  </a>
-                ) : (
-                  <Badge variant="outline" className="text-[10px] font-semibold bg-amber-500/10 text-amber-700 border-amber-200">
-                    Backlog — No Sprint
-                  </Badge>
-                )}
-              </p>
-            </div>
-            <div className="space-y-1">
-              <span className="text-muted-foreground font-semibold">Description:</span>
-              <p className="text-muted-foreground font-normal mt-0.5 truncate max-w-[320px]" title={story.description}>
-                {story.description || <span className="italic opacity-50">No description provided</span>}
-              </p>
-            </div>
-          </div>
+      {insights && (
+        <StoryMonitoringCards
+          delayed={insights.delayed}
+          dueSoon={insights.dueSoon}
+          upcoming={insights.upcoming}
+          blocked={insights.blocked}
+          unassigned={insights.unassigned}
+          activeFilter={monitorFilter}
+          onFilterChange={setMonitorFilter}
+          onHighlightStage={setHighlightStageId}
+        />
+      )}
 
-          {/* Timeline Timestamps */}
-          <div className="grid gap-4 sm:grid-cols-2 pt-3 border-t border-border/60">
-            <div className="space-y-2 rounded-lg border border-border p-3 bg-muted/5">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Planned Timeline</span>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <span className="text-muted-foreground text-[10px]">Planned Start:</span>
-                  <p className="font-medium text-foreground text-xs mt-0.5">
-                    {story.plannedStartDate ? new Date(story.plannedStartDate).toLocaleDateString() : "--"}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground text-[10px]">Planned End:</span>
-                  <p className="font-medium text-foreground text-xs mt-0.5">
-                    {story.plannedEndDate ? new Date(story.plannedEndDate).toLocaleDateString() : "--"}
-                  </p>
-                </div>
-              </div>
-            </div>
+      {insights && <DeveloperCommunicationCard story={story} insights={insights} />}
 
-            <div className="space-y-2 rounded-lg border border-border p-3 bg-muted/5">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Actual Timeline</span>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <span className="text-muted-foreground text-[10px]">Actual Start:</span>
-                  <p className="font-medium text-foreground text-xs mt-0.5">
-                    {story.actualStartDate ? new Date(story.actualStartDate).toLocaleDateString() : "--"}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground text-[10px]">Actual End:</span>
-                  <p className="font-medium text-foreground text-xs mt-0.5">
-                    {story.actualEndDate ? new Date(story.actualEndDate).toLocaleDateString() : "--"}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Description Section */}
-          {story.description && (
-            <div className="pt-3 border-t border-border/60 space-y-1">
-              <span className="text-muted-foreground font-semibold flex items-center gap-1.5">
-                <FileText className="h-3.5 w-3.5 text-muted-foreground/75" />
-                Detailed Scope
-              </span>
-              <p className="text-xs text-foreground/80 leading-relaxed bg-muted/5 p-3 rounded-lg border border-border/40 whitespace-pre-wrap">
-                {story.description}
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Stepper Ladder & Accordion child stories */}
-      <JourneyLadder story={story as any} stages={story.childStages as any} onRefresh={fetchStoryDetails} />
+      <JourneyLadder
+        story={story as any}
+        stages={story.childStages as any}
+        onRefresh={fetchStoryDetails}
+        highlightStageId={highlightStageId}
+        stageInsights={insights?.stageInsights || []}
+      />
 
       {/* Edit Story Details Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
@@ -673,6 +570,26 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
                     type="date"
                     className="bg-card h-9 text-xs"
                     {...register("plannedEndDate")}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-actualStart">Actual Start Date</Label>
+                  <Input
+                    id="edit-actualStart"
+                    type="date"
+                    className="bg-card h-9 text-xs"
+                    {...register("actualStartDate")}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-actualEnd">Actual End Date</Label>
+                  <Input
+                    id="edit-actualEnd"
+                    type="date"
+                    className="bg-card h-9 text-xs"
+                    {...register("actualEndDate")}
                   />
                 </div>
               </div>
