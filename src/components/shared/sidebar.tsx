@@ -12,6 +12,7 @@ import {
   Users as UsersIcon,
   LogOut,
   FolderGit,
+  User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type SessionUser } from "@/app/actions/auth";
@@ -44,6 +45,7 @@ export function Sidebar({ user, className, isMobile = false }: SidebarProps) {
   ];
 
   const adminNavItems = [
+    { name: "Profile Settings", href: "/settings/profile", icon: User },
     { name: "Stage Catalog", href: "/settings/stages", icon: Settings },
     { name: "Users", href: "/users", icon: UsersIcon },
   ];

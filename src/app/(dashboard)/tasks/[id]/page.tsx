@@ -39,6 +39,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import {
   Dialog,
@@ -105,8 +106,15 @@ interface PlannerStage {
 
 const storyFormSchema = z.object({
   title: z.string().min(2, { message: "Story title must be at least 2 characters." }),
+  description: z.string().optional(),
   adoStoryLink: z.string().url({ message: "Must be a valid Azure DevOps URL." }).or(z.literal("")),
   sprint: z.string().min(1, { message: "Target sprint is required." }),
+  assignedTo: z.string().optional(),
+  state: z.enum(["New", "Active", "Resolved", "Closed"]),
+  plannedStartDate: z.string().optional().or(z.literal("")),
+  plannedEndDate: z.string().optional().or(z.literal("")),
+  actualStartDate: z.string().optional().or(z.literal("")),
+  actualEndDate: z.string().optional().or(z.literal("")),
 });
 
 type StoryFormValues = z.infer<typeof storyFormSchema>;
@@ -118,6 +126,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [stories, setStories] = useState<StoryItem[]>([]);
   const [sprints, setSprints] = useState<SprintItem[]>([]);
+  const [users, setUsers] = useState<TaskOwner[]>([]);
   const [catalogStages, setCatalogStages] = useState<PlannerStage[]>([]);
   
   const [loading, setLoading] = useState(true);
@@ -144,8 +153,15 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     resolver: zodResolver(storyFormSchema),
     defaultValues: {
       title: "",
+      description: "",
       adoStoryLink: "",
       sprint: "",
+      assignedTo: "",
+      state: "New",
+      plannedStartDate: "",
+      plannedEndDate: "",
+      actualStartDate: "",
+      actualEndDate: "",
     },
   });
 
@@ -163,6 +179,13 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       if (sprintRes.ok) {
         const sprintData = await sprintRes.json();
         setSprints(sprintData);
+      }
+
+      // Fetch users
+      const usersRes = await fetch("/api/users");
+      if (usersRes.ok) {
+        const usersData = await usersRes.json();
+        setUsers(usersData);
       }
     } catch (err: any) {
       console.error(err);
@@ -218,8 +241,15 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     // Reset form values
     reset({
       title: "",
+      description: "",
       adoStoryLink: "",
       sprint: sprints[0]?._id || "",
+      assignedTo: "",
+      state: "New",
+      plannedStartDate: "",
+      plannedEndDate: "",
+      actualStartDate: "",
+      actualEndDate: "",
     });
     // Set stage planner state to default active stages order
     setPlannerStages([...catalogStages]);
@@ -264,6 +294,11 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
         ...values,
         task: taskId,
         stagePlan: selectedStagePlanIds,
+        assignedTo: values.assignedTo || null,
+        plannedStartDate: values.plannedStartDate ? new Date(values.plannedStartDate).toISOString() : null,
+        plannedEndDate: values.plannedEndDate ? new Date(values.plannedEndDate).toISOString() : null,
+        actualStartDate: values.actualStartDate ? new Date(values.actualStartDate).toISOString() : null,
+        actualEndDate: values.actualEndDate ? new Date(values.actualEndDate).toISOString() : null,
       };
 
       const res = await fetch("/api/stories", {
@@ -408,7 +443,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                         <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Current Stage</span>
                         <StageBadge name={details.name} colorTag={details.colorTag} size="sm" />
                       </div>
-                      <Button variant="outline" size="sm" className="hidden sm:inline-flex" render={<Link href="/stories" />}>
+                      <Button variant="outline" size="sm" className="hidden sm:inline-flex" render={<Link href={`/stories/${story._id}`} />}>
                         Track
                       </Button>
                     </div>
@@ -445,11 +480,21 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                   )}
                 </div>
 
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="story-description">Description</Label>
+                  <Textarea
+                    id="story-description"
+                    placeholder="Enter detailed explanation of what needs to be built..."
+                    className="bg-card min-h-[70px] text-xs"
+                    {...register("description")}
+                  />
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="story-sprint">Target Sprint</Label>
                   <select
                     id="story-sprint"
-                    className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     {...register("sprint")}
                   >
                     {sprints.map((s) => (
@@ -458,9 +503,6 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                       </option>
                     ))}
                   </select>
-                  {errors.sprint && (
-                    <p className="text-xs text-destructive font-medium">{errors.sprint.message}</p>
-                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -475,6 +517,76 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                   {errors.adoStoryLink && (
                     <p className="text-xs text-destructive font-medium">{errors.adoStoryLink.message}</p>
                   )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="story-assignee">Assigned Developer</Label>
+                  <select
+                    id="story-assignee"
+                    className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    {...register("assignedTo")}
+                  >
+                    <option value="">Unassigned</option>
+                    {users.map((u) => (
+                      <option key={u._id} value={u._id}>
+                        {u.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="story-state">ADO State</Label>
+                  <select
+                    id="story-state"
+                    className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    {...register("state")}
+                  >
+                    <option value="New">New</option>
+                    <option value="Active">Active</option>
+                    <option value="Resolved">Resolved</option>
+                    <option value="Closed">Closed</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="plannedStartDate">Planned Start</Label>
+                  <Input
+                    id="plannedStartDate"
+                    type="date"
+                    className="bg-card h-9 text-xs"
+                    {...register("plannedStartDate")}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="plannedEndDate">Planned End</Label>
+                  <Input
+                    id="plannedEndDate"
+                    type="date"
+                    className="bg-card h-9 text-xs"
+                    {...register("plannedEndDate")}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="actualStartDate">Actual Start</Label>
+                  <Input
+                    id="actualStartDate"
+                    type="date"
+                    className="bg-card h-9 text-xs"
+                    {...register("actualStartDate")}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="actualEndDate">Actual End</Label>
+                  <Input
+                    id="actualEndDate"
+                    type="date"
+                    className="bg-card h-9 text-xs"
+                    {...register("actualEndDate")}
+                  />
                 </div>
               </div>
 

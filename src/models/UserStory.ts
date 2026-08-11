@@ -14,12 +14,19 @@ export interface IStoryHoldHistory {
 
 export interface IUserStory extends Document {
   title: string;
+  description?: string;
   adoStoryLink?: string;
   task: mongoose.Types.ObjectId;
   sprint: mongoose.Types.ObjectId;
   stagePlan: IStagePlanEntry[];
   currentStageOrder: number;
   overallStatus: "not_started" | "in_progress" | "blocked" | "on_hold" | "completed";
+  assignedTo?: mongoose.Types.ObjectId;
+  state: "New" | "Active" | "Resolved" | "Closed";
+  plannedStartDate?: Date;
+  plannedEndDate?: Date;
+  actualStartDate?: Date;
+  actualEndDate?: Date;
   isOnHold: boolean;
   holdReason?: string;
   holdHistory: IStoryHoldHistory[];
@@ -42,6 +49,7 @@ const StoryHoldHistorySchema = new Schema<IStoryHoldHistory>({
 const UserStorySchema = new Schema<IUserStory>(
   {
     title: { type: String, required: true },
+    description: { type: String },
     adoStoryLink: { type: String },
     task: { type: Schema.Types.ObjectId, ref: "Task", required: true, index: true },
     sprint: { type: Schema.Types.ObjectId, ref: "Sprint", required: true, index: true },
@@ -61,6 +69,17 @@ const UserStorySchema = new Schema<IUserStory>(
       enum: ["not_started", "in_progress", "blocked", "on_hold", "completed"],
       default: "not_started",
     },
+    assignedTo: { type: Schema.Types.ObjectId, ref: "User" },
+    state: {
+      type: String,
+      enum: ["New", "Active", "Resolved", "Closed"],
+      default: "New",
+      index: true,
+    },
+    plannedStartDate: { type: Date },
+    plannedEndDate: { type: Date },
+    actualStartDate: { type: Date },
+    actualEndDate: { type: Date },
     isOnHold: { type: Boolean, default: false },
     holdReason: { type: String },
     holdHistory: [StoryHoldHistorySchema],

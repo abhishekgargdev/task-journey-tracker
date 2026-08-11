@@ -43,7 +43,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { title, adoStoryLink, task, sprint, stagePlan } = await request.json();
+    const {
+      title,
+      description,
+      adoStoryLink,
+      task,
+      sprint,
+      stagePlan,
+      assignedTo,
+      state,
+      plannedStartDate,
+      plannedEndDate,
+      actualStartDate,
+      actualEndDate,
+    } = await request.json();
 
     if (!title || title.trim().length < 2) {
       return NextResponse.json({ error: "Story title is required (min 2 characters)." }, { status: 400 });
@@ -66,15 +79,30 @@ export async function POST(request: Request) {
       order: index + 1,
     }));
 
-    // Create the User Story. Default overallStatus is set to 'in_progress' because the first stage starts immediately
+    // Align overallStatus with State
+    let initialOverallStatus: "not_started" | "in_progress" | "completed" = "in_progress";
+    if (state === "Closed") {
+      initialOverallStatus = "completed";
+    } else if (state === "New") {
+      initialOverallStatus = "not_started";
+    }
+
+    // Create the User Story
     const userStory = await UserStory.create({
       title: title.trim(),
+      description: description || "",
       adoStoryLink: adoStoryLink?.trim() || "",
       task,
       sprint,
       stagePlan: formattedPlan,
       currentStageOrder: 1,
-      overallStatus: "in_progress",
+      overallStatus: initialOverallStatus,
+      assignedTo: assignedTo || null,
+      state: state || "New",
+      plannedStartDate: plannedStartDate || null,
+      plannedEndDate: plannedEndDate || null,
+      actualStartDate: actualStartDate || null,
+      actualEndDate: actualEndDate || null,
     });
 
     // Create StoryStage tickets for each step in stagePlan
@@ -82,7 +110,12 @@ export async function POST(request: Request) {
       story: userStory._id,
       stage: stageId,
       order: index + 1,
-      status: index === 0 ? "in_progress" : "not_started",
+      status: index === 0
+        ? (initialOverallStatus === "completed" ? "completed" : initialOverallStatus === "not_started" ? "not_started" : "in_progress")
+        : "not_started",
+      assignedTo: index === 0 ? (assignedTo || null) : null,
+      actualStartDate: index === 0 && (state === "Active" || state === "Resolved") ? (actualStartDate || new Date()) : null,
+      actualEndDate: index === 0 && state === "Closed" ? (actualEndDate || new Date()) : null,
     }));
 
     await StoryStage.insertMany(storyStages);
