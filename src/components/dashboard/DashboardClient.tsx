@@ -112,7 +112,7 @@ export default function DashboardClient({
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
         <MetricCard
           title="Stories"
           value={metrics.totalStories}
@@ -128,6 +128,13 @@ export default function DashboardClient({
           valueClassName="text-blue-600"
         />
         <MetricCard
+          title="On Hold"
+          value={metrics.stagesOnHold}
+          subtitle={`${metrics.onHold} stories affected`}
+          icon={<AlertTriangle className="h-4 w-4 text-slate-500" />}
+          valueClassName="text-slate-600"
+        />
+        <MetricCard
           title="Blocked"
           value={metrics.blocked}
           subtitle="Awaiting resolution"
@@ -137,7 +144,7 @@ export default function DashboardClient({
         <MetricCard
           title="Delayed"
           value={metrics.delayed}
-          subtitle="Stories with overdue stages"
+          subtitle="Hold-aware overdue"
           icon={<AlertTriangle className="h-4 w-4 text-amber-500 animate-pulse" />}
           valueClassName="text-amber-600"
         />
@@ -210,6 +217,7 @@ export default function DashboardClient({
                     <th className="py-2.5 px-4">Developer</th>
                     <th className="py-2.5 px-4 text-center">Assigned Stories</th>
                     <th className="py-2.5 px-4 text-center">Stages Active</th>
+                    <th className="py-2.5 px-4 text-center">On Hold</th>
                     <th className="py-2.5 px-4 text-center">Completed</th>
                     <th className="py-2.5 px-4 text-center text-rose-600">Overdue Stages</th>
                   </tr>
@@ -225,6 +233,7 @@ export default function DashboardClient({
                       </td>
                       <td className="py-2.5 px-4 text-center text-foreground font-semibold">{wl.assignedStories}</td>
                       <td className="py-2.5 px-4 text-center text-blue-600 font-semibold">{wl.inProgress}</td>
+                      <td className="py-2.5 px-4 text-center text-slate-600 font-semibold">{wl.onHold}</td>
                       <td className="py-2.5 px-4 text-center text-emerald-600 font-semibold">{wl.completed}</td>
                       <td
                         className={cn(
@@ -346,11 +355,14 @@ export default function DashboardClient({
                                   story.status === "completed" && "bg-emerald-500/10 text-emerald-600",
                                   story.status === "in_progress" && "bg-blue-500/10 text-blue-600 animate-pulse",
                                   story.status === "blocked" && "bg-rose-500/10 text-rose-600 animate-bounce",
-                                  story.status === "delayed" && "bg-amber-500/10 text-amber-600",
-                                  story.status === "not_started" && "bg-muted text-muted-foreground"
-                                )}
-                              >
-                                {story.status.replace(/_/g, " ")}
+                                story.status === "delayed" && "bg-amber-500/10 text-amber-600",
+                                story.status === "not_started" && "bg-muted text-muted-foreground",
+                                summary.currentStage?.status === "on_hold" && "bg-slate-500/10 text-slate-600"
+                              )}
+                            >
+                              {summary.currentStage?.status === "on_hold"
+                                ? "on hold"
+                                : story.status.replace(/_/g, " ")}
                               </Badge>
                             </div>
                           </div>

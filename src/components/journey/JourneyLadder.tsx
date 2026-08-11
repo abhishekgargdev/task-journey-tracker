@@ -39,6 +39,7 @@ import {
   GitBranch,
   GitPullRequest,
   Plus,
+  PauseCircle,
   Trash2,
 } from "lucide-react";
 
@@ -73,6 +74,7 @@ import {
   healthLabel,
   type StageInsight,
 } from "@/lib/story-monitoring";
+import { getActiveHold } from "@/lib/story-hold";
 
 // Types
 interface StageDefinition {
@@ -97,7 +99,7 @@ interface UserStory {
   plannedEndDate: string;
   actualStartDate?: string;
   actualEndDate?: string;
-  status: "not_started" | "in_progress" | "blocked" | "completed" | "delayed";
+  status: "not_started" | "in_progress" | "on_hold" | "blocked" | "completed" | "delayed";
   isOnHold: boolean;
   holdReason?: string;
   stageOrder: StageDefinition[];
@@ -115,7 +117,7 @@ interface StoryStage {
   plannedEndDate?: string;
   actualStartDate?: string;
   actualEndDate?: string;
-  status: "not_started" | "in_progress" | "blocked" | "completed" | "delayed";
+  status: "not_started" | "in_progress" | "on_hold" | "blocked" | "completed" | "delayed";
   githubRepo?: string;
   branchName?: string;
   githubPrLink?: string;
@@ -143,7 +145,7 @@ const stageEditSchema = z.object({
   plannedEndDate: z.string().or(z.literal("")),
   actualStartDate: z.string().or(z.literal("")),
   actualEndDate: z.string().or(z.literal("")),
-  status: z.enum(["not_started", "in_progress", "blocked", "completed", "delayed"]),
+  status: z.enum(["not_started", "in_progress", "on_hold", "blocked", "completed", "delayed"]),
   githubRepo: z.string().optional(),
   branchName: z.string().optional(),
   prLink: z.string().url({ message: "Must be a valid URL." }).or(z.literal("")),
@@ -392,7 +394,7 @@ export default function JourneyLadder({ story, stages, onRefresh, highlightStage
     const insight = stageInsights.find((i) => i.stage._id === stageVal._id);
     const isDelayed =
       status === "delayed" ||
-      ((insight?.daysOverdue ?? 0) > 0 && status !== "completed");
+      ((insight?.daysOverdue ?? 0) > 0 && status !== "completed" && status !== "on_hold");
 
     if (status === "completed") {
       return {
@@ -400,6 +402,14 @@ export default function JourneyLadder({ story, stages, onRefresh, highlightStage
         icon: <CheckCircle2 className="h-5.5 w-5.5" />,
         labelColor: "text-emerald-600 font-semibold",
         symbol: "✓",
+      };
+    }
+    if (status === "on_hold") {
+      return {
+        bg: "bg-slate-500 border-slate-500 text-white shadow-slate-500/20 ring-4 ring-slate-500/20",
+        icon: <PauseCircle className="h-5 w-5" />,
+        labelColor: "text-slate-600 font-bold",
+        symbol: "⏸",
       };
     }
     if (status === "blocked") {
@@ -477,8 +487,9 @@ export default function JourneyLadder({ story, stages, onRefresh, highlightStage
   const currentStageId = nextStage?._id;
   const inProgressCount = ladderStages.filter((s) => s.status === "in_progress").length;
   const upcomingCount = ladderStages.filter((s) => s.status === "not_started").length;
+  const onHoldCount = ladderStages.filter((s) => s.status === "on_hold").length;
   const delayedCount = stageInsights.filter(
-    (i) => i.daysOverdue && i.stage.status !== "completed"
+    (i) => i.daysOverdue && i.stage.status !== "completed" && i.stage.status !== "on_hold"
   ).length;
 
   return (
@@ -537,6 +548,7 @@ export default function JourneyLadder({ story, stages, onRefresh, highlightStage
             <div className="flex flex-wrap gap-3 text-[11px]">
               <StatPill label="Completed" value={completedStagesCount} color="text-emerald-600" />
               <StatPill label="In Progress" value={inProgressCount} color="text-blue-600" />
+              <StatPill label="On Hold" value={onHoldCount} color="text-slate-600" />
               <StatPill label="Upcoming" value={upcomingCount} color="text-muted-foreground" />
               <StatPill label="Delayed" value={delayedCount} color="text-rose-600" />
             </div>
@@ -880,6 +892,12 @@ export function ChildStoryAccordionItem({
   const [newChildName, setNewChildName] = useState("");
   const [newChildSprintId, setNewChildSprintId] = useState("");
   const [newChildHasSprintId, setNewChildHasSprintId] = useState(false);
+  const [holdDialogOpen, setHoldDialogOpen] = useState(false);
+  const [holdStartInput, setHoldStartInput] = useState(formatDateForInput(new Date().toISOString()));
+  const [holdReasonInput, setHoldReasonInput] = useState("");
+  const [releaseDialogOpen, setReleaseDialogOpen] = useState(false);
+  const [releaseDateInput, setReleaseDateInput] = useState(formatDateForInput(new Date().toISOString()));
+  const [holdActionLoading, setHoldActionLoading] = useState(false);
 
   const {
     register,
@@ -1062,6 +1080,61 @@ export function ChildStoryAccordionItem({
     }
   };
 
+  const placeStageOnHold = async () => {
+    try {
+      setHoldActionLoading(true);
+      const res = await fetch(`/api/stories/${storyId}/child-stages/${storyStage._id}/hold`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          holdStartDate: serializeDateInput(holdStartInput),
+          holdReason: holdReasonInput,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to place stage on hold.");
+      }
+      toast.add({ title: "Stage on hold", description: `${stageName} has been placed on hold.`, type: "success" });
+      setHoldDialogOpen(false);
+      onRefresh?.();
+    } catch (err: unknown) {
+      toast.add({
+        title: "Hold failed",
+        description: err instanceof Error ? err.message : "Could not place on hold.",
+        type: "error",
+      });
+    } finally {
+      setHoldActionLoading(false);
+    }
+  };
+
+  const releaseStageHold = async () => {
+    try {
+      setHoldActionLoading(true);
+      const res = await fetch(`/api/stories/${storyId}/child-stages/${storyStage._id}/release-hold`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ holdReleasedDate: serializeDateInput(releaseDateInput) }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to release hold.");
+      }
+      toast.add({ title: "Hold released", description: `${stageName} work can resume.`, type: "success" });
+      setReleaseDialogOpen(false);
+      onRefresh?.();
+    } catch (err: unknown) {
+      toast.add({
+        title: "Release failed",
+        description: err instanceof Error ? err.message : "Could not release hold.",
+        type: "error",
+      });
+    } finally {
+      setHoldActionLoading(false);
+    }
+  };
+
   const handleCopyBranchName = (e: React.MouseEvent, name?: string) => {
     e.stopPropagation();
     if (!name) return;
@@ -1084,6 +1157,7 @@ export function ChildStoryAccordionItem({
       case "blocked":
         return { bg: "bg-rose-500/10 text-rose-600", icon: <XCircle className="h-4 w-4" /> };
       case "on_hold":
+        return { bg: "bg-slate-500/10 text-slate-600", icon: <PauseCircle className="h-4 w-4" /> };
       case "delayed":
         return { bg: "bg-amber-500/10 text-amber-600", icon: <Clock className="h-4 w-4" /> };
       default:
@@ -1093,18 +1167,26 @@ export function ChildStoryAccordionItem({
 
   const stageColors = getStageColorConfig(colorTag);
   const statusStyle = getStatusStyle(storyStage.status);
+  const activeHold = getActiveHold(storyStage);
+  const isOnHold = storyStage.status === "on_hold";
   const isDelayed =
-    storyStage.status === "delayed" ||
-    Boolean(stageInsight?.daysOverdue && storyStage.status !== "completed");
+    !isOnHold &&
+    (storyStage.status === "delayed" ||
+      Boolean(stageInsight?.daysOverdue && storyStage.status !== "completed"));
 
   const statusLabel =
-    storyStage.status === "completed"
+    isOnHold
+      ? "On Hold"
+      : storyStage.status === "completed"
       ? healthLabel(stageInsight?.health || "completed_on_time")
       : storyStage.status === "not_started"
         ? "Not Started"
         : storyStage.status.replace(/_/g, " ");
 
   const timingLabel = (() => {
+    if (isOnHold && stageInsight?.activeHoldDays !== null && stageInsight?.activeHoldDays !== undefined) {
+      return `On hold ${stageInsight.activeHoldDays} day${stageInsight.activeHoldDays === 1 ? "" : "s"}`;
+    }
     if (storyStage.status === "completed") return null;
     if (stageInsight?.daysOverdue) {
       return `${stageInsight.daysOverdue} day${stageInsight.daysOverdue === 1 ? "" : "s"} overdue`;
@@ -1135,6 +1217,7 @@ export function ChildStoryAccordionItem({
       className={cn(
         "border rounded-xl bg-card overflow-hidden shadow-sm hover:border-primary/10 transition-colors",
         isDelayed ? "border-rose-300 bg-rose-500/[0.02]" : "border-border",
+        isOnHold && "border-slate-300 bg-slate-500/[0.03]",
         isHighlighted && "ring-2 ring-primary border-primary/40",
         isSubTicket && "border-l-4 border-l-primary/40"
       )}
@@ -1157,12 +1240,13 @@ export function ChildStoryAccordionItem({
                   variant="outline"
                   className={cn(
                     "text-[9px] font-bold capitalize",
-                    isDelayed && "bg-rose-100 text-rose-700 border-rose-200",
-                    storyStage.status === "in_progress" && !isDelayed && "bg-blue-100 text-blue-700 border-blue-200",
+                    isOnHold && "bg-slate-100 text-slate-700 border-slate-200",
+                    isDelayed && !isOnHold && "bg-rose-100 text-rose-700 border-rose-200",
+                    storyStage.status === "in_progress" && !isDelayed && !isOnHold && "bg-blue-100 text-blue-700 border-blue-200",
                     storyStage.status === "completed" && "bg-emerald-100 text-emerald-700 border-emerald-200"
                   )}
                 >
-                  {isDelayed && storyStage.status !== "completed" ? "Delayed" : statusLabel}
+                  {isDelayed && !isOnHold && storyStage.status !== "completed" ? "Delayed" : statusLabel}
                 </Badge>
               </div>
 
@@ -1188,10 +1272,18 @@ export function ChildStoryAccordionItem({
                 {timingLabel && (
                   <div>
                     <span className="text-muted-foreground">
-                      {stageInsight?.daysOverdue ? "Overdue" : storyStage.status === "not_started" ? "Starts In" : "Due"}
+                      {isOnHold ? "Hold" : stageInsight?.daysOverdue ? "Overdue" : storyStage.status === "not_started" ? "Starts In" : "Due"}
                     </span>
-                    <p className={cn("font-semibold", isDelayed ? "text-rose-600" : "text-foreground")}>
+                    <p className={cn("font-semibold", isDelayed ? "text-rose-600" : isOnHold ? "text-slate-600" : "text-foreground")}>
                       {timingLabel}
+                    </p>
+                  </div>
+                )}
+                {activeHold && (
+                  <div>
+                    <span className="text-muted-foreground">Hold Period</span>
+                    <p className="font-medium text-foreground">
+                      {formatDisplayDate(activeHold.holdStartDate)} → {activeHold.holdReleasedDate ? formatDisplayDate(activeHold.holdReleasedDate) : "—"}
                     </p>
                   </div>
                 )}
@@ -1364,6 +1456,41 @@ export function ChildStoryAccordionItem({
               <Input type="date" className="bg-card h-8.5 text-xs" {...register("actualEndDate")} />
             </div>
 
+            {/* Hold information */}
+            <div className="sm:col-span-2 md:col-span-3 rounded-lg border border-slate-200 bg-slate-50/50 p-3 space-y-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Hold Information</p>
+              <div className="grid gap-3 sm:grid-cols-3 text-xs">
+                <div>
+                  <span className="text-muted-foreground">Hold Start</span>
+                  <p className="font-semibold">{formatDisplayDate(activeHold?.holdStartDate)}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Hold Released</span>
+                  <p className="font-semibold">{formatDisplayDate(activeHold?.holdReleasedDate)}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Hold Duration</span>
+                  <p className="font-semibold">
+                    {stageInsight?.holdDurationDays
+                      ? `${stageInsight.holdDurationDays} day${stageInsight.holdDurationDays === 1 ? "" : "s"}`
+                      : "—"}
+                  </p>
+                </div>
+                {stageInsight?.effectivePlannedEnd && (
+                  <div>
+                    <span className="text-muted-foreground">Adjusted Planned End</span>
+                    <p className="font-semibold">{formatDisplayDate(stageInsight.effectivePlannedEnd)}</p>
+                  </div>
+                )}
+                {activeHold?.holdReason && (
+                  <div className="sm:col-span-2">
+                    <span className="text-muted-foreground">Hold Reason</span>
+                    <p className="font-medium">{activeHold.holdReason}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Implementation details */}
             <div className="space-y-1.5 sm:col-span-2">
               <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Implementation Description</Label>
@@ -1386,8 +1513,40 @@ export function ChildStoryAccordionItem({
           </div>
 
           {mode === "edit" && (
-            <div className="flex justify-end pt-2">
-              <Button type="submit" disabled={isSubmitting} size="sm" className="cursor-pointer text-xs">
+            <div className="flex justify-between items-center pt-2 gap-2 flex-wrap">
+              <div className="flex gap-2">
+                {isOnHold ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="cursor-pointer text-xs"
+                    onClick={() => {
+                      setReleaseDateInput(formatDateForInput(new Date().toISOString()));
+                      setReleaseDialogOpen(true);
+                    }}
+                  >
+                    <PauseCircle className="h-3.5 w-3.5 mr-1" />
+                    Release Hold
+                  </Button>
+                ) : storyStage.status !== "completed" ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="cursor-pointer text-xs border-slate-300"
+                    onClick={() => {
+                      setHoldStartInput(formatDateForInput(new Date().toISOString()));
+                      setHoldReasonInput("");
+                      setHoldDialogOpen(true);
+                    }}
+                  >
+                    <PauseCircle className="h-3.5 w-3.5 mr-1" />
+                    Place on Hold
+                  </Button>
+                ) : null}
+              </div>
+              <Button type="submit" disabled={isSubmitting || isOnHold} size="sm" className="cursor-pointer text-xs">
                 {isSubmitting ? (
                   <>
                     <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
@@ -1485,6 +1644,57 @@ export function ChildStoryAccordionItem({
         Delete Sub-ticket
       </Button>
     )}
+
+    <Dialog open={holdDialogOpen} onOpenChange={setHoldDialogOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Place Stage on Hold</DialogTitle>
+          <DialogDescription>
+            Stage: <strong>{stageName}</strong>
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-1">
+          <div className="space-y-1.5">
+            <Label>Hold Start Date</Label>
+            <Input type="date" value={holdStartInput} onChange={(e) => setHoldStartInput(e.target.value)} className="text-xs" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Reason (optional)</Label>
+            <Input
+              placeholder="e.g. Waiting for business confirmation"
+              value={holdReasonInput}
+              onChange={(e) => setHoldReasonInput(e.target.value)}
+              className="text-xs"
+            />
+          </div>
+        </div>
+        <DialogFooter showCloseButton>
+          <Button variant="outline" onClick={() => setHoldDialogOpen(false)} className="cursor-pointer text-xs">Cancel</Button>
+          <Button onClick={placeStageOnHold} disabled={holdActionLoading} className="cursor-pointer text-xs">
+            {holdActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Place on Hold"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={releaseDialogOpen} onOpenChange={setReleaseDialogOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Release Hold</DialogTitle>
+          <DialogDescription>Confirm when work resumed on {stageName}.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5 py-1">
+          <Label>Hold Released Date</Label>
+          <Input type="date" value={releaseDateInput} onChange={(e) => setReleaseDateInput(e.target.value)} className="text-xs" />
+        </div>
+        <DialogFooter showCloseButton>
+          <Button variant="outline" onClick={() => setReleaseDialogOpen(false)} className="cursor-pointer text-xs">Cancel</Button>
+          <Button onClick={releaseStageHold} disabled={holdActionLoading} className="cursor-pointer text-xs">
+            {holdActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Release Hold"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import dbConnect from "@/lib/mongodb";
 import { Story } from "@/models/Story";
 import { StoryStage } from "@/models/StoryStage";
 import { getSession } from "@/lib/session";
+import { syncParentStoryStatus } from "@/lib/sync-story-status";
 
 export async function POST(
   request: Request,
@@ -38,11 +39,18 @@ export async function POST(
     const activeStages = await StoryStage.find({ storyId, isArchived: { $ne: true } })
       .sort({ stageOrder: 1 });
     
-    const activeStage = activeStages.find((s) => s.status !== "completed");
-    if (activeStage) {
-      activeStage.status = "blocked";
+    const activeStage = activeStages.find((s) => s.status !== "completed" && !s.parentStoryStageId);
+    if (activeStage && activeStage.status !== "on_hold") {
+      activeStage.statusBeforeHold = activeStage.status;
+      activeStage.status = "on_hold";
+      activeStage.holdHistory.push({
+        holdStartDate: new Date(),
+        holdReason: reason.trim(),
+      });
       await activeStage.save();
     }
+
+    await syncParentStoryStatus(storyId);
 
     return NextResponse.json(story);
   } catch (error) {

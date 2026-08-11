@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { Copy, Share2, Check, Mail, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +23,8 @@ const TEMPLATE_OPTIONS: { value: MessageTemplate; label: string }[] = [
   { value: "assignment", label: "Task Assignment" },
   { value: "reminder", label: "Deadline Reminder" },
   { value: "delay", label: "Delay Notification" },
+  { value: "on_hold", label: "On Hold Notification" },
+  { value: "hold_released", label: "Hold Released / Resume Work" },
 ];
 
 export default function DeveloperCommunicationCard({
@@ -33,6 +35,11 @@ export default function DeveloperCommunicationCard({
   const [copied, setCopied] = useState(false);
 
   const targetInsight = insights.currentStageInsight;
+
+  useEffect(() => {
+    if (targetInsight?.isOnHold) setTemplate("on_hold");
+    else if (template === "on_hold") setTemplate("assignment");
+  }, [targetInsight?.isOnHold, targetInsight?.stage._id]);
 
   const message = useMemo(() => {
     if (!targetInsight) return "";

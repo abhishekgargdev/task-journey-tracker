@@ -8,17 +8,19 @@ import {
   Ban,
   UserX,
   CheckCircle2,
+  PauseCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type StageInsight, formatDisplayDate } from "@/lib/story-monitoring";
 
-export type MonitorFilter = "delayed" | "due_soon" | "upcoming" | "blocked" | "unassigned" | null;
+export type MonitorFilter = "delayed" | "due_soon" | "upcoming" | "blocked" | "on_hold" | "unassigned" | null;
 
 interface StoryMonitoringCardsProps {
   delayed: StageInsight[];
   dueSoon: StageInsight[];
   upcoming: StageInsight[];
   blocked: StageInsight[];
+  onHold: StageInsight[];
   unassigned: StageInsight[];
   activeFilter: MonitorFilter;
   onFilterChange: (filter: MonitorFilter) => void;
@@ -30,6 +32,7 @@ export default function StoryMonitoringCards({
   dueSoon,
   upcoming,
   blocked,
+  onHold,
   unassigned,
   activeFilter,
   onFilterChange,
@@ -111,6 +114,27 @@ export default function StoryMonitoringCards({
       ),
     },
     {
+      id: "on_hold" as const,
+      title: "On Hold",
+      icon: PauseCircle,
+      items: onHold,
+      emptyText: "No stages on hold.",
+      emptyIcon: CheckCircle2,
+      accent: "border-slate-200 bg-slate-500/5 hover:border-slate-300",
+      activeAccent: "ring-2 ring-slate-400 border-slate-400",
+      titleColor: "text-slate-700",
+      renderItem: (i: StageInsight) => (
+        <>
+          <p className="font-semibold text-xs truncate">{i.stageName}</p>
+          <p className="text-[10px] text-muted-foreground">
+            {i.activeHoldDays
+              ? `On hold ${i.activeHoldDays} day${i.activeHoldDays === 1 ? "" : "s"}`
+              : "On Hold"}
+          </p>
+        </>
+      ),
+    },
+    {
       id: "unassigned" as const,
       title: "Unassigned",
       icon: UserX,
@@ -127,7 +151,7 @@ export default function StoryMonitoringCards({
   ];
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
       {cards.map((card) => {
         const Icon = card.icon;
         const EmptyIcon = card.emptyIcon;

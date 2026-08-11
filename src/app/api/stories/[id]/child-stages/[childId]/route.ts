@@ -3,6 +3,7 @@ import dbConnect from "@/lib/mongodb";
 import { StoryStage } from "@/models/StoryStage";
 import { StoryUser } from "@/models/StoryUser";
 import { getSession } from "@/lib/session";
+import { syncParentStoryStatus } from "@/lib/sync-story-status";
 
 async function deleteStageAndDescendants(storyId: string, stageId: string) {
   const children = await StoryStage.find({ storyId, parentStoryStageId: stageId });
@@ -44,6 +45,13 @@ export async function PATCH(
       }
     }
 
+    if (updates.status === "on_hold") {
+      return NextResponse.json(
+        { error: "Use Place on Hold action to set a stage on hold." },
+        { status: 400 }
+      );
+    }
+
     const allowedFields = [
       "plannedStartDate", "plannedEndDate", "actualStartDate", "actualEndDate",
       "status", "githubRepo", "branchName", "githubPrLink", "prStatus",
@@ -63,6 +71,7 @@ export async function PATCH(
     });
 
     await storyStage.save();
+    await syncParentStoryStatus(storyId);
 
     const populated = await StoryStage.findById(storyStage._id)
       .populate("developBy", "name email status")

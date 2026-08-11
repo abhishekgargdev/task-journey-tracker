@@ -452,6 +452,7 @@ export default function StoryDetailPage({ params }: { params: Promise<{ id: stri
           dueSoon={insights.dueSoon}
           upcoming={insights.upcoming}
           blocked={insights.blocked}
+          onHold={insights.onHold}
           unassigned={insights.unassigned}
           activeFilter={monitorFilter}
           onFilterChange={setMonitorFilter}

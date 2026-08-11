@@ -1,5 +1,11 @@
 import mongoose, { Schema, Document, Model } from "mongoose";
 
+export interface IStageHoldPeriod {
+  holdStartDate: Date;
+  holdReleasedDate?: Date;
+  holdReason?: string;
+}
+
 export interface IStoryStage extends Document {
   storyId: mongoose.Types.ObjectId;
   stageId: mongoose.Types.ObjectId;
@@ -16,7 +22,9 @@ export interface IStoryStage extends Document {
   developBy?: mongoose.Types.ObjectId;
   githubPrLink?: string;
   branchName?: string;
-  status: "not_started" | "in_progress" | "blocked" | "completed" | "delayed";
+  status: "not_started" | "in_progress" | "on_hold" | "blocked" | "completed" | "delayed";
+  statusBeforeHold?: string;
+  holdHistory: IStageHoldPeriod[];
   isArchived: boolean;
   githubRepo?: string; // Preserve for UI integration
   prStatus?: "none" | "pending" | "merged"; // Preserve for UI integration
@@ -26,6 +34,15 @@ export interface IStoryStage extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+const StageHoldPeriodSchema = new Schema<IStageHoldPeriod>(
+  {
+    holdStartDate: { type: Date, required: true },
+    holdReleasedDate: { type: Date },
+    holdReason: { type: String },
+  },
+  { _id: true }
+);
 
 const StoryStageSchema = new Schema<IStoryStage>(
   {
@@ -46,10 +63,12 @@ const StoryStageSchema = new Schema<IStoryStage>(
     branchName: { type: String },
     status: {
       type: String,
-      enum: ["not_started", "in_progress", "blocked", "completed", "delayed"],
+      enum: ["not_started", "in_progress", "on_hold", "blocked", "completed", "delayed"],
       default: "not_started",
       index: true,
     },
+    statusBeforeHold: { type: String },
+    holdHistory: { type: [StageHoldPeriodSchema], default: [] },
     isArchived: { type: Boolean, default: false, index: true },
     githubRepo: { type: String },
     prStatus: {
