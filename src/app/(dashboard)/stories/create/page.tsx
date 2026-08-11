@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -292,12 +292,33 @@ export default function CreateStoryPage() {
     setPlannerStages((prev) => arrayMove(prev, oldIndex, newIndex));
   };
 
-  const updateStageDetail = (stageId: string, details: StageDetails) => {
-    setChildStageDetails((prev) => ({
-      ...prev,
-      [stageId]: details,
-    }));
-  };
+  const updateStageDetail = useCallback((stageId: string, details: StageDetails) => {
+    setChildStageDetails((prev) => {
+      const prevDetails = prev[stageId];
+      if (
+        prevDetails &&
+        prevDetails.adoStoryLink === details.adoStoryLink &&
+        prevDetails.developBy === details.developBy &&
+        prevDetails.status === details.status &&
+        prevDetails.branchName === details.branchName &&
+        prevDetails.githubRepo === details.githubRepo &&
+        prevDetails.prStatus === details.prStatus &&
+        prevDetails.githubPrLink === details.githubPrLink &&
+        prevDetails.plannedStartDate === details.plannedStartDate &&
+        prevDetails.plannedEndDate === details.plannedEndDate &&
+        prevDetails.actualStartDate === details.actualStartDate &&
+        prevDetails.actualEndDate === details.actualEndDate &&
+        prevDetails.implementationDescription === details.implementationDescription &&
+        prevDetails.notes === details.notes
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [stageId]: details,
+      };
+    });
+  }, []);
 
   // Add new User to database directly
   const handleAddUserSubmit = async (e: React.FormEvent) => {

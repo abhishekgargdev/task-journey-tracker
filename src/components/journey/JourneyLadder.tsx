@@ -794,14 +794,24 @@ export function ChildStoryAccordionItem({
 
   useEffect(() => {
     if (mode === "create") {
-      if (storyStage.plannedStartDate) {
-        setValue("plannedStartDate", new Date(storyStage.plannedStartDate).toISOString().split("T")[0]);
+      const newStart = storyStage.plannedStartDate ? new Date(storyStage.plannedStartDate).toISOString().split("T")[0] : "";
+      const newEnd = storyStage.plannedEndDate ? new Date(storyStage.plannedEndDate).toISOString().split("T")[0] : "";
+      
+      if (newStart && formValues.plannedStartDate !== newStart) {
+        setValue("plannedStartDate", newStart);
       }
-      if (storyStage.plannedEndDate) {
-        setValue("plannedEndDate", new Date(storyStage.plannedEndDate).toISOString().split("T")[0]);
+      if (newEnd && formValues.plannedEndDate !== newEnd) {
+        setValue("plannedEndDate", newEnd);
       }
     }
-  }, [storyStage.plannedStartDate, storyStage.plannedEndDate, mode, setValue]);
+  }, [
+    storyStage.plannedStartDate,
+    storyStage.plannedEndDate,
+    formValues.plannedStartDate,
+    formValues.plannedEndDate,
+    mode,
+    setValue
+  ]);
 
   const onSubmit = async (values: StageEditFormValues) => {
     // Dates validation
