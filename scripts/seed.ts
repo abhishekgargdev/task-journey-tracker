@@ -56,8 +56,8 @@ async function main() {
   console.log("Cleared all existing database collections.");
 
   // Seed Users
-  const seedEmail = process.env.SEED_EMAIL || "you@bajajfinserv.local";
-  const seedPassword = process.env.SEED_PASSWORD || "Test@123";
+  const seedEmail = process.env.SEED_EMAIL || "abhishekgargdev959@gmail.com";
+  const seedPassword = process.env.SEED_PASSWORD || "Test@1234";
   const hashedSeedPassword = await bcrypt.hash(seedPassword, 10);
 
   const mainUser = await User.create({

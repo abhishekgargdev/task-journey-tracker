@@ -105,7 +105,7 @@ export default function LoginPage() {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="you@bajajfinserv.local"
+                  placeholder="abhishekgargdev959@gmail.com"
                   disabled={isLoading}
                   className="bg-card"
                   {...register("email")}
@@ -144,14 +144,7 @@ export default function LoginPage() {
                 )}
               </Button>
 
-              <div className="rounded-lg bg-muted/60 p-3 text-[11px] text-muted-foreground w-full space-y-2 border border-border">
-                <p className="font-semibold text-foreground">Local Development Accounts:</p>
-                <p>🔑 <span className="font-semibold text-foreground">Seed User:</span> you@bajajfinserv.local / Test@123</p>
-                <p className="text-[10px] italic pt-1 border-t border-border mt-1 leading-normal">
-                  {/* Note: signup/register pages are intentionally disabled. Accounts are provisioned solely via a seed script. */}
-                  Registration is disabled. Accounts can only be provisioned via seed script.
-                </p>
-              </div>
+             
             </CardFooter>
           </form>
         </Card>
