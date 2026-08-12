@@ -40,6 +40,7 @@ export function Sidebar({ user, className, isMobile = false }: SidebarProps) {
   const mainNavItems = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
     { name: "Stories Workspace", href: "/stories", icon: BookOpen },
+    { name: "Daily Planner", href: "/tasks", icon: CheckSquare },
   ];
 
   const adminNavItems = [

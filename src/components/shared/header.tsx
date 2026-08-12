@@ -37,7 +37,7 @@ export function Header({ user }: HeaderProps) {
 
   const getPageTitle = (path: string) => {
     if (path === "/") return "Dashboard Overview";
-    if (path.startsWith("/tasks")) return "Tasks Delivery";
+    if (path.startsWith("/tasks")) return "Daily Tasks Planner";
     if (path.startsWith("/sprints")) return "Sprints Planning";
     if (path.startsWith("/stories")) return "User Stories Catalog";
     if (path.startsWith("/settings/stages")) return "Stage Catalog Configuration";

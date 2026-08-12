@@ -5,6 +5,8 @@ import "@/models/StageDefinition";
 import "@/models/Task";
 import "@/models/UserStory";
 import "@/models/StoryStage";
+import "@/models/KanbanColumn";
+import "@/models/KanbanTask";
 
 const MONGODB_URI = process.env.MONGODB_URI;
 
