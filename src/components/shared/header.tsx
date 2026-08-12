@@ -40,6 +40,7 @@ export function Header({ user }: HeaderProps) {
     if (path.startsWith("/tasks")) return "Daily Tasks Planner";
     if (path.startsWith("/sprints")) return "Sprints Planning";
     if (path.startsWith("/stories")) return "User Stories Catalog";
+    if (path.startsWith("/adhoc-tasks")) return "Ad-hoc Tasks Workspace";
     if (path.startsWith("/settings/stages")) return "Stage Catalog Configuration";
     if (path.startsWith("/users")) return "User Directory";
     return "Task Journey Tracker";
