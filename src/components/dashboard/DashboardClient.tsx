@@ -41,12 +41,14 @@ interface DashboardClientProps {
   stories: StoryWithStages[];
   developers: DbUser[];
   userName: string;
+  activeAdhocCount?: number;
 }
 
 export default function DashboardClient({
   stories,
   developers,
   userName,
+  activeAdhocCount = 0,
 }: DashboardClientProps) {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
@@ -158,11 +160,25 @@ export default function DashboardClient({
       </div>
 
       {/* Date Tracking Section */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-5">
         <DateCard title="Due Today" value={metrics.dueToday} />
         <DateCard title="Due This Week" value={metrics.dueThisWeek} />
         <DateCard title="Overdue Stories" value={metrics.overdueStories} accent="rose" />
         <DateCard title="Upcoming Work" value={metrics.upcoming} />
+        <Link href="/adhoc-tasks" className="block transition-transform hover:scale-[1.01]">
+          <Card className="border border-border bg-card shadow-sm text-center card-premium h-full flex flex-col justify-center select-none cursor-pointer">
+            <CardHeader className="pb-1.5 pt-4">
+              <CardTitle className="text-[9px] uppercase tracking-wider font-bold text-primary">
+                Active Ad-hoc Tasks
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <div className="text-2xl font-bold text-primary">
+                {activeAdhocCount}
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {/* Middle Grid: Stage Tracking & Developer Workloads */}

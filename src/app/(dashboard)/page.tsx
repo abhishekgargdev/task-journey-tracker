@@ -8,6 +8,7 @@ import { pageMetadata } from "@/lib/site-metadata";
 import { fetchAllStoriesWithStages } from "@/lib/story-queries";
 import DashboardClient from "@/components/dashboard/DashboardClient";
 import { Card } from "@/components/ui/card";
+import { AdhocTask } from "@/models/AdhocTask";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -23,12 +24,15 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  const [stories, usersRaw] = await Promise.all([
+  const [stories, usersRaw, activeAdhocCount] = await Promise.all([
     fetchAllStoriesWithStages(),
     dbConnect().then(() =>
       User.find({ status: "active" })
         .lean()
         .then((users) => JSON.parse(JSON.stringify(users)))
+    ),
+    dbConnect().then(() =>
+      AdhocTask.countDocuments({ status: { $ne: "completed" } })
     ),
   ]);
 
@@ -38,6 +42,7 @@ export default async function DashboardPage() {
         stories={stories}
         developers={usersRaw}
         userName={session.name || "Developer"}
+        activeAdhocCount={activeAdhocCount}
       />
     </Suspense>
   );
