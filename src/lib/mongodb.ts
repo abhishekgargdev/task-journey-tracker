@@ -8,6 +8,7 @@ import "@/models/StoryStage";
 import "@/models/KanbanColumn";
 import "@/models/KanbanTask";
 import "@/models/AdhocTask";
+import "@/models/DailyStatusReport";
 
 const MONGODB_URI = process.env.MONGODB_URI;
 

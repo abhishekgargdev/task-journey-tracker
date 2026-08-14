@@ -14,6 +14,7 @@ import {
   FolderGit,
   User,
   Zap,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type SessionUser } from "@/app/actions/auth";
@@ -43,6 +44,7 @@ export function Sidebar({ user, className, isMobile = false }: SidebarProps) {
     { name: "Stories Workspace", href: "/stories", icon: BookOpen },
     { name: "Daily Planner", href: "/tasks", icon: CheckSquare },
     { name: "Ad-hoc Tasks", href: "/adhoc-tasks", icon: Zap },
+    { name: "Daily Standup", href: "/daily-status", icon: ClipboardList },
   ];
 
   const adminNavItems = [
